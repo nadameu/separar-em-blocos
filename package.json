@@ -1,0 +1,19 @@
+{
+  "name": "separar-em-blocos",
+  "version": "1.0.0",
+  "description": "Separar processos em blocos",
+  "main": ".",
+  "scripts": {
+    "test": "."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nadameu/separar-em-blocos.git"
+  },
+  "author": "nadameu",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/nadameu/separar-em-blocos/issues"
+  },
+  "homepage": "https://github.com/nadameu/separar-em-blocos#readme"
+}
