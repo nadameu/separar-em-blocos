@@ -14,6 +14,10 @@
   },
   "homepage": "https://github.com/nadameu/separar-em-blocos#readme",
   "devDependencies": {
-    "esbuild": "^0.13.8"
+    "esbuild": "^0.13.8",
+    "typescript": "^4.4.4"
+  },
+  "dependencies": {
+    "zod": "^3.10.3"
   }
 }

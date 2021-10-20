@@ -1,6 +1,10 @@
 {
-  "target": "esnext",
-  "module": "esnext",
-  "isolatedModules": true,
-  "strict": true
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "isolatedModules": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  }
 }
