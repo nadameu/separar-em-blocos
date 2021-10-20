@@ -2,7 +2,10 @@
   "name": "separar-em-blocos",
   "version": "1.0.0",
   "description": "Separar processos em blocos",
-  "scripts": {},
+  "scripts": {
+    "build": "esbuild --platform=node --bundle --external:esbuild util/build.ts | node",
+    "start": "esbuild --platform=node --bundle --external:esbuild util/serve.ts | node"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nadameu/separar-em-blocos.git"
@@ -15,6 +18,7 @@
   "homepage": "https://github.com/nadameu/separar-em-blocos#readme",
   "devDependencies": {
     "esbuild": "^0.13.8",
+    "preact": "^10.5.15",
     "typescript": "^4.4.4"
   },
   "dependencies": {

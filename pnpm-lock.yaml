@@ -2,6 +2,7 @@ lockfileVersion: 5.3
 
 specifiers:
   esbuild: ^0.13.8
+  preact: ^10.5.15
   typescript: ^4.4.4
   zod: ^3.10.3
 
@@ -10,6 +11,7 @@ dependencies:
 
 devDependencies:
   esbuild: 0.13.8
+  preact: 10.5.15
   typescript: 4.4.4
 
 packages:
@@ -172,6 +174,10 @@ packages:
       esbuild-windows-32: 0.13.8
       esbuild-windows-64: 0.13.8
       esbuild-windows-arm64: 0.13.8
+    dev: true
+
+  /preact/10.5.15:
+    resolution: {integrity: sha512-5chK29n6QcJc3m1lVrKQSQ+V7K1Gb8HeQY6FViQ5AxCAEGu3DaHffWNDkC9+miZgsLvbvU9rxbV1qinGHMHzqA==}
     dev: true
 
   /typescript/4.4.4:
