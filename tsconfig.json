@@ -1,0 +1,6 @@
+{
+  "target": "esnext",
+  "module": "esnext",
+  "isolatedModules": true,
+  "strict": true
+}
