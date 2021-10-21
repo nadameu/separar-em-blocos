@@ -34,7 +34,7 @@ interface IsOfTypeMap {
 }
 
 export function isOfType<K extends keyof IsOfTypeMap>(
-  typeRepresentation: K
+  typeRepresentation: K,
 ): Predicate<IsOfTypeMap[K]> {
   return (value: unknown): value is IsOfTypeMap[K] => typeof value === typeRepresentation;
 }
@@ -48,7 +48,7 @@ export const isString = /* @__PURE__ */ isOfType('string');
 export const isSymbol = /* @__PURE__ */ isOfType('symbol');
 
 export function isLiteral<T extends string | number | bigint | boolean | symbol | null | undefined>(
-  literal: T
+  literal: T,
 ): Predicate<T> {
   return (value: unknown): value is T => value === literal;
 }
@@ -74,7 +74,7 @@ type ExtractPredicateType<T, V> = T extends [Negate<infer Exc>, ...infer R]
 
 export function refine<T, U extends T>(
   predicate: Predicate<T>,
-  refinement: Refinement<T, U>
+  refinement: Refinement<T, U>,
 ): Predicate<U>;
 export function refine<T extends Array<Refinement<any, any> | Negate<any>>>(
   ...predicates: T
@@ -95,20 +95,20 @@ export const isNotNullish = /* @__PURE__ */ negate(isNullish);
 export function isArray<T>(predicate: Predicate<T>): Predicate<T[]> {
   return refine(
     (value): value is unknown[] => Array.isArray(value),
-    (xs): xs is T[] => xs.every(predicate)
+    (xs): xs is T[] => xs.every(predicate),
   );
 }
 
 export function hasKeys<K extends string>(...keys: K[]): Predicate<Record<K, unknown>> {
   return refine(isObject, (obj: object): obj is Record<K, unknown> =>
-    keys.every(key => key in obj)
+    keys.every(key => key in obj),
   );
 }
 
 export function hasShape<T extends Record<string, Predicate<any>>>(
-  predicates: T
+  predicates: T,
 ): Predicate<{ [K in keyof T]: T[K] extends Predicate<infer U> ? U : never }> {
   return refine(hasKeys(...Object.keys(predicates)), (obj): obj is Record<keyof T, any> =>
-    Object.entries(predicates).every(([key, predicate]) => predicate(obj[key]))
+    Object.entries(predicates).every(([key, predicate]) => predicate(obj[key])),
   );
 }
