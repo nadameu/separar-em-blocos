@@ -5,4 +5,4 @@ export const isServerState = p.hasShape({
   aberto: p.isBoolean,
   blocos: p.isArray(isBloco),
 });
-export type State = p.Static<typeof isServerState>;
+export type ServerState = p.Static<typeof isServerState>;
