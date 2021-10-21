@@ -1,5 +1,5 @@
-import { z } from 'zod';
+import * as p from '../lib/predicates';
 
-export const isNumProc = z.string().length(20);
+export const isNumProc = p.refine(p.isString, (x): x is string => /^\d{20}$/.test(x));
 
-export type NumProc = z.infer<typeof isNumProc>;
+export type NumProc = p.Static<typeof isNumProc>;

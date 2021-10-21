@@ -1,8 +1,8 @@
-import { z } from 'zod';
+import * as p from '../lib/predicates';
 import { isBloco } from './Bloco';
 
-export const isState = z.object({
-  aberto: z.boolean(),
-  blocos: z.array(isBloco),
+export const isState = p.hasShape({
+  aberto: p.isBoolean,
+  blocos: p.isArray(isBloco),
 });
-export type State = z.infer<typeof isState>;
+export type State = p.Static<typeof isState>;

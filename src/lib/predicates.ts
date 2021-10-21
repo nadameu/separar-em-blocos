@@ -9,14 +9,18 @@ export function assert(condition: boolean, message?: string): asserts condition 
   if (!condition) throw new AssertionError(message);
 }
 
-export interface Narrow<T, U extends T> {
+export interface Refinement<T, U extends T> {
   (value: T): value is U;
 }
-export interface Predicate<T> extends Narrow<unknown, T> {}
+export interface Predicate<T> extends Refinement<unknown, T> {}
 
-export function isUnknown(value: unknown): value is unknown {
-  return true;
+export interface Negate<U> {
+  <T>(value: T | U): value is T;
 }
+
+export type Static<T> = T extends Predicate<infer U> ? U : never;
+
+export const isUnknown: Predicate<unknown> = (value: unknown): value is unknown => true;
 
 interface IsOfTypeMap {
   bigint: bigint;
@@ -45,29 +49,38 @@ export const isSymbol = /* @__PURE__ */ isOfType('symbol');
 
 export function isLiteral<T extends string | number | bigint | boolean | symbol | null | undefined>(
   literal: T
-) {
+): Predicate<T> {
   return (value: unknown): value is T => value === literal;
 }
 export const isUndefined = /* @__PURE__ */ isLiteral(undefined);
 export const isNull = /* @__PURE__ */ isLiteral(null);
 
-export function negate<U>(predicate: Predicate<U>) {
+export function negate<U>(predicate: Predicate<U>): Negate<U> {
   return <T>(value: T | U): value is T => !predicate(value);
 }
 export const isNotNull = /* @__PURE__ */ negate(isNull);
 export const isDefined = /* @__PURE__ */ negate(isUndefined);
 
+type Refine<T> = T extends never ? never : Predicate<ExtractPredicateType<T, unknown>>;
+type ExtractPredicateType<T, V> = T extends [Negate<infer Exc>, ...infer R]
+  ? ExtractPredicateType<R, Exclude<V, Exc>>
+  : T extends [Refinement<infer From, infer To>, ...infer R]
+  ? V extends From
+    ? ExtractPredicateType<R, To>
+    : unknown
+  : T extends []
+  ? V
+  : never;
+
 export function refine<T, U extends T>(
   predicate: Predicate<T>,
-  refinement: Narrow<T, U>
+  refinement: Refinement<T, U>
 ): Predicate<U>;
-export function refine<T, U extends T, V extends U>(
-  predicate: Predicate<T>,
-  refinement0: Narrow<T, U>,
-  refinement1: Narrow<U, V>
-): Predicate<V>;
-export function refine(...predicates: Predicate<any>[]): any {
-  return (value: any) => predicates.every(p => p(value));
+export function refine<T extends Array<Refinement<any, any> | Negate<any>>>(
+  ...predicates: T
+): Refine<T>;
+export function refine(...predicates: Function[]) {
+  return (value: unknown) => predicates.every(p => p(value));
 }
 export const isObject = /* @__PURE__ */ refine(isOfTypeObject, isNotNull);
 
@@ -83,5 +96,19 @@ export function isArray<T>(predicate: Predicate<T>): Predicate<T[]> {
   return refine(
     (value): value is unknown[] => Array.isArray(value),
     (xs): xs is T[] => xs.every(predicate)
+  );
+}
+
+export function hasKeys<K extends string>(...keys: K[]): Predicate<Record<K, unknown>> {
+  return refine(isObject, (obj: object): obj is Record<K, unknown> =>
+    keys.every(key => key in obj)
+  );
+}
+
+export function hasShape<T extends Record<string, Predicate<any>>>(
+  predicates: T
+): Predicate<{ [K in keyof T]: T[K] extends Predicate<infer U> ? U : never }> {
+  return refine(hasKeys(...Object.keys(predicates)), (obj): obj is Record<keyof T, any> =>
+    Object.entries(predicates).every(([key, predicate]) => predicate(obj[key]))
   );
 }

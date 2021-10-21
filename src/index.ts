@@ -1,5 +1,6 @@
+import { assert } from './lib/predicates';
 import { isState } from './types/State';
 
 const a = {};
-const b = isState.parse(a);
-console.log(b);
+assert(isState(a));
+console.log(a);

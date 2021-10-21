@@ -1,15 +1,15 @@
-import { z } from 'zod';
+import * as p from '../lib/predicates';
 import { isBlocoProcesso } from './Bloco';
 import { isNumProc } from './NumProc';
 
-export const isClientMessage = z.object({
-  type: z.literal('ObterBlocosProcesso'),
+export const isClientMessage = p.hasShape({
+  type: p.isLiteral('ObterBlocosProcesso'),
   numproc: isNumProc,
 });
-export type ClientMessage = z.infer<typeof isClientMessage>;
+export type ClientMessage = p.Static<typeof isClientMessage>;
 
-export const isServerMessage = z.object({
-  type: z.literal('FornecerBlocosProcesso'),
-  blocos: z.array(isBlocoProcesso),
+export const isServerMessage = p.hasShape({
+  type: p.isLiteral('FornecerBlocosProcesso'),
+  blocos: p.isArray(isBlocoProcesso),
 });
-export type ServerMessage = z.infer<typeof isServerMessage>;
+export type ServerMessage = p.Static<typeof isServerMessage>;

@@ -4,10 +4,6 @@ specifiers:
   esbuild: ^0.13.8
   preact: ^10.5.15
   typescript: ^4.4.4
-  zod: ^3.10.3
-
-dependencies:
-  zod: 3.10.3
 
 devDependencies:
   esbuild: 0.13.8
@@ -185,7 +181,3 @@ packages:
     engines: {node: '>=4.2.0'}
     hasBin: true
     dev: true
-
-  /zod/3.10.3:
-    resolution: {integrity: sha512-ngMXcA/TNXnlXWAmAdH98U6rV5W0K8wNASafMIYUuOrBfwtO7LyPXaOi/riRZns1qfWuE1lHr7gt9N4rmyYFlQ==}
-    dev: false

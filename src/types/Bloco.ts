@@ -1,12 +1,12 @@
-import { z } from 'zod';
+import * as p from '../lib/predicates';
 import { isNumProc } from './NumProc';
 
-export const isId = z.number().int().nonnegative();
+export const isId = p.refine(p.isNumber, (x): x is number => Number.isInteger(x) && x >= 0);
 
-export const isNome = z.string().refine(x => x.trim() !== '');
+export const isNome = p.refine(p.isString, (x): x is string => x.trim() !== '');
 
-export const isBloco = z.object({ id: isId, nome: isNome, processos: z.array(isNumProc) });
-export type Bloco = z.infer<typeof isBloco>;
+export const isBloco = p.hasShape({ id: isId, nome: isNome, processos: p.isArray(isNumProc) });
+export type Bloco = p.Static<typeof isBloco>;
 
-export const isBlocoProcesso = z.object({ id: isId, nome: isNome, inserido: z.boolean() });
-export type BlocoProcesso = z.infer<typeof isBlocoProcesso>;
+export const isBlocoProcesso = p.hasShape({ id: isId, nome: isNome, inserido: p.isBoolean });
+export type BlocoProcesso = p.Static<typeof isBlocoProcesso>;
