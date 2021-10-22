@@ -1,5 +1,6 @@
+import { Opaque } from '../lib/Opaque';
 import * as p from '../lib/predicates';
 
-export const isNumProc = p.refine(p.isString, (x): x is string => /^\d{20}$/.test(x));
-
-export type NumProc = p.Static<typeof isNumProc>;
+declare const NumProcSymbol: unique symbol;
+export type NumProc = Opaque<string, typeof NumProcSymbol>;
+export const isNumProc = p.refine(p.isString, (x): x is NumProc => /^\d{20}$/.test(x));

@@ -1,3 +1,5 @@
+import { Opaque } from './Opaque';
+
 export class AssertionError extends Error {
   readonly name = 'AssertionError';
   constructor(message?: string) {
@@ -83,6 +85,24 @@ export function refine(...predicates: Function[]) {
   return (value: unknown) => predicates.every(p => p(value));
 }
 export const isObject = /* @__PURE__ */ refine(isOfTypeObject, isNotNull);
+declare const IntegerSymbol: unique symbol;
+export type Integer = Opaque<number, typeof IntegerSymbol>;
+export const isInteger = /* @__PURE__*/ refine(isNumber, (x): x is Integer => Number.isInteger(x));
+declare const NaturalSymbol: unique symbol;
+export type Natural = Opaque<number, typeof NaturalSymbol>;
+export const isNatural = /* @__PURE__*/ refine(isInteger, (x: number): x is Natural => x > 0);
+declare const NonNegativeIntegerSymbol: unique symbol;
+export type NonNegativeInteger = Opaque<number, typeof NonNegativeIntegerSymbol>;
+export const isNonNegativeInteger = /* @__PURE__*/ isAnyOf(
+  isLiteral(0),
+  isNatural,
+) as Predicate<NonNegativeInteger>;
+declare const NonEmptyStringSymbol: unique symbol;
+export type NonEmptyString = Opaque<string, typeof NonEmptyStringSymbol>;
+export const isNonEmptyString = /* @__PURE__*/ refine(
+  isString,
+  (x): x is NonEmptyString => x.trim().length > 0,
+);
 
 export function isAnyOf<T extends Predicate<any>[]>(
   ...predicates: T

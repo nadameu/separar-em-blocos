@@ -1,9 +1,9 @@
 import * as p from '../lib/predicates';
 import { isNumProc } from './NumProc';
 
-export const isIdBloco = p.refine(p.isNumber, (x): x is number => Number.isInteger(x) && x >= 0);
+export const isIdBloco = p.isNonNegativeInteger;
 
-export const isNomeBloco = p.refine(p.isString, (x): x is string => x.trim() !== '');
+export const isNomeBloco = p.isNonEmptyString;
 
 export const isBloco = p.hasShape({
   id: isIdBloco,
