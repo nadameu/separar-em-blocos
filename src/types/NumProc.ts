@@ -2,4 +2,5 @@ import { Opaque } from '../lib/Opaque';
 import * as p from '../lib/predicates';
 
 export type NumProc = Opaque<string, { readonly Numproc: unique symbol }>;
-export const isNumProc = p.refine(p.isString, (x): x is NumProc => /^\d{20}$/.test(x));
+const numprocRE = /^5\d{8}20\d{2}404(?:00|7(?:0|1|2)|99)\d{2}$/;
+export const isNumProc = p.refine(p.isString, (x): x is NumProc => numprocRE.test(x));
