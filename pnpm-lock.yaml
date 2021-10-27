@@ -2,12 +2,16 @@ lockfileVersion: 5.3
 
 specifiers:
   esbuild: ^0.13.8
+  idb: ^6.1.5
   preact: ^10.5.15
   typescript: ^4.4.4
 
+dependencies:
+  idb: 6.1.5
+  preact: 10.5.15
+
 devDependencies:
   esbuild: 0.13.8
-  preact: 10.5.15
   typescript: 4.4.4
 
 packages:
@@ -172,9 +176,13 @@ packages:
       esbuild-windows-arm64: 0.13.8
     dev: true
 
+  /idb/6.1.5:
+    resolution: {integrity: sha512-IJtugpKkiVXQn5Y+LteyBCNk1N8xpGV3wWZk9EVtZWH8DYkjBn0bX1XnGP9RkyZF0sAcywa6unHqSWKe7q4LGw==}
+    dev: false
+
   /preact/10.5.15:
     resolution: {integrity: sha512-5chK29n6QcJc3m1lVrKQSQ+V7K1Gb8HeQY6FViQ5AxCAEGu3DaHffWNDkC9+miZgsLvbvU9rxbV1qinGHMHzqA==}
-    dev: true
+    dev: false
 
   /typescript/4.4.4:
     resolution: {integrity: sha512-DqGhF5IKoBl8WNf8C1gu8q0xZSInh9j1kJJMqT3a94w1JzVaBU4EXOSMrz9yDqMT0xt3selp83fuFMQ0uzv6qA==}

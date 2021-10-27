@@ -1,3 +1,8 @@
+import * as pkg from './package.json';
+
+const preactVersion = pkg.dependencies.preact;
+const idbVersion = pkg.dependencies.idb;
+
 export default {
   'name:pt-BR': 'Separar em blocos',
   'namespace': 'http://nadameu.com.br',
@@ -8,6 +13,9 @@ export default {
   ],
   'grant': 'none',
   'description': 'Permite a separação de processos em blocos para movimentação separada',
-  'require':
-    'https://cdn.jsdelivr.net/combine/npm/preact@10.5.15/dist/preact.umd.min.js,npm/preact@10.5.15/hooks/dist/hooks.umd.min.js',
+  'require': [
+    `https://unpkg.com/preact@${preactVersion}/dist/preact.umd.min.js`,
+    `https://unpkg.com/preact@${preactVersion}/hooks/dist/hooks.umd.min.js`,
+    `https://unpkg.com/idb@${idbVersion}/build/iife/index-min.js`,
+  ],
 };
