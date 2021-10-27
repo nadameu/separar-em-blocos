@@ -14,8 +14,8 @@ export default {
   'grant': 'none',
   'description': 'Permite a separação de processos em blocos para movimentação separada',
   'require': [
-    `https://unpkg.com/preact@${preactVersion}/dist/preact.umd.min.js`,
-    `https://unpkg.com/preact@${preactVersion}/hooks/dist/hooks.umd.min.js`,
+    `https://unpkg.com/preact@${preactVersion}/dist/preact.umd.js`,
+    `https://unpkg.com/preact@${preactVersion}/hooks/dist/hooks.umd.js`,
     `https://unpkg.com/idb@${idbVersion}/build/iife/index-min.js`,
   ],
 };
