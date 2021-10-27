@@ -63,15 +63,14 @@ export function negate<U>(predicate: Predicate<U>): Negate<U> {
 export const isNotNull = /* @__PURE__ */ negate(isNull);
 export const isDefined = /* @__PURE__ */ negate(isUndefined);
 
-type Refine<T> = T extends never ? never : Predicate<ExtractPredicateType<T, unknown>>;
-type ExtractPredicateType<T, V> = T extends [Negate<infer Exc>, ...infer R]
-  ? ExtractPredicateType<R, Exclude<V, Exc>>
+type Refine<T, V = unknown> = T extends [Negate<infer Exc>, ...infer R]
+  ? Refine<R, Exclude<V, Exc>>
   : T extends [Refinement<infer From, infer To>, ...infer R]
   ? V extends From
-    ? ExtractPredicateType<R, To>
+    ? Refine<R, To>
     : unknown
   : T extends []
-  ? V
+  ? Predicate<V>
   : never;
 
 export function refine<T, U extends T>(
