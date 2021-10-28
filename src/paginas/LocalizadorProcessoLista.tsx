@@ -10,7 +10,15 @@ import {
 import { expectUnreachable } from '../lib/expectUnreachable';
 import { Handler } from '../lib/Handler';
 import { assert, isNonEmptyString, isNotNull, NonNegativeInteger } from '../lib/predicates';
-import { ServerAction } from '../types/Action';
+import {
+  isServerErrorAction,
+  isServerLoadedAction,
+  isServerLoadingAction,
+  ServerAction,
+  ServerErrorAction,
+  ServerLoadedAction,
+  ServerLoadingAction,
+} from '../types/Action';
 import { Bloco } from '../types/Bloco';
 import { ServerState } from '../types/State';
 
@@ -22,10 +30,10 @@ export function LocalizadorProcessoLista() {
   preact.render(<Main />, barra.parentElement!, div);
 }
 
-type State =
-  | { status: 'loading'; previousValue: ServerState | null }
-  | { status: 'loaded'; value: ServerState }
-  | { status: 'error'; reason: string };
+type State = ServerLoadingState | ServerLoadedState | ServerErrorState;
+type ServerLoadingState = { status: 'loading'; previousValue: ServerState | null };
+type ServerLoadedState = { status: 'loaded'; value: ServerState };
+type ServerErrorState = { status: 'error'; reason: string };
 
 type Lazy<T> = () => T;
 
@@ -73,8 +81,8 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
   }
 
   function loadingReducer(
-    state: Extract<State, { status: 'loading' }>,
-    action: ServerAction,
+    state: ServerLoadingState,
+    action: ServerLoadingAction,
   ): [State, ...Array<() => Promise<ServerAction>>] {
     switch (action.type) {
       case 'AtualizarBlocos': {
@@ -98,17 +106,22 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
           },
         ];
       }
-      case 'DadosInvalidos': {
+      case 'DadosInvalidos':
         if (state.previousValue)
           return [{ status: 'loaded', value: { ...state.previousValue, aviso: action.motivo } }];
         return [{ status: 'error', reason: action.motivo }];
-      }
+
+      case 'Erro':
+        return [{ status: 'error', reason: action.motivo }];
+
+      case 'ObterDados':
+        return [state, async () => ({ type: 'AtualizarBlocos', blocos: await getBlocos() })];
     }
-    return [{ status: 'error', reason: `Ação desconhecida: ${JSON.stringify(action)}` }];
+    expectUnreachable(action);
   }
   function loadedReducer(
-    state: Extract<State, { status: 'loaded' }>,
-    action: ServerAction,
+    state: ServerLoadedState,
+    action: ServerLoadedAction,
   ): [State, ...Array<() => Promise<ServerAction>>] {
     switch (action.type) {
       case 'CriarBloco': {
@@ -130,6 +143,10 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
             return { type: 'AtualizarBlocos', blocos: [...blocos, bloco] };
           },
         ];
+      }
+
+      case 'Erro': {
+        return [{ status: 'error', reason: action.motivo }];
       }
 
       case 'ExcluirBloco': {
@@ -161,21 +178,32 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
         ];
       }
     }
-    return [{ status: 'error', reason: `Ação desconhecida: ${JSON.stringify(action)}` }];
+    expectUnreachable(action);
   }
   function errorReducer(
-    state: Extract<State, { status: 'error' }>,
-    action: ServerAction,
+    state: ServerErrorState,
+    action: ServerErrorAction,
   ): [State, ...Array<() => Promise<ServerAction>>] {
     switch (action.type) {
+      case 'Erro': {
+        return [state];
+      }
       case 'ExcluirBanco': {
         return [
           { status: 'loading', previousValue: null },
           () => deleteBlocos().then(() => ({ type: 'ObterDados' })),
         ];
       }
+      case 'ObterDados': {
+        return [
+          { status: 'loading', previousValue: null },
+          async () => {
+            return { type: 'AtualizarBlocos', blocos: await getBlocos() };
+          },
+        ];
+      }
     }
-    return [{ status: 'error', reason: `Ação desconhecida: ${JSON.stringify(action)}` }];
+    expectUnreachable(action);
   }
 
   function reducer(
@@ -183,26 +211,27 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
     action: ServerAction,
   ): [State, ...Array<() => Promise<ServerAction>>] {
     console.log('reducer', action);
-    switch (action.type) {
-      case 'ObterDados': {
-        return [
-          { status: 'loading', previousValue: state.status === 'loaded' ? state.value : null },
-          () => getBlocos().then(blocos => ({ type: 'AtualizarBlocos', blocos })),
-        ];
-      }
-
+    switch (state.status) {
+      case 'loading':
+        if (isServerLoadingAction(action)) return loadingReducer(state, action);
+        break;
+      case 'loaded':
+        if (isServerLoadedAction(action)) return loadedReducer(state, action);
+        break;
+      case 'error':
+        if (isServerErrorAction(action)) return errorReducer(state, action);
+        break;
       default:
-        switch (state.status) {
-          case 'loading':
-            return loadingReducer(state, action);
-          case 'loaded':
-            return loadedReducer(state, action);
-          case 'error':
-            return errorReducer(state, action);
-          default:
-            return expectUnreachable(state);
-        }
+        return expectUnreachable(state);
     }
+    return [
+      {
+        status: 'error',
+        reason: `Ação incompatível com estado atual da aplicação (${
+          state.status
+        }): ${JSON.stringify(action)}.`,
+      },
+    ];
   }
 }
 
