@@ -15,6 +15,9 @@ export interface Refinement<T, U extends T> {
   (value: T): value is U;
 }
 export interface Predicate<T> extends Refinement<unknown, T> {}
+export interface OptionalPropertyPredicate<T> extends Predicate<T> {
+  optional: true;
+}
 
 export interface Negate<U> {
   <T>(value: T | U): value is T;
@@ -122,8 +125,44 @@ export function hasKeys<K extends string>(...keys: K[]): Predicate<Record<K, unk
 
 export function hasShape<T extends Record<string, Predicate<any>>>(
   predicates: T,
-): Predicate<{ [K in keyof T]: T[K] extends Predicate<infer U> ? U : never }> {
-  return refine(hasKeys(...Object.keys(predicates)), (obj): obj is Record<keyof T, any> =>
-    Object.entries(predicates).every(([key, predicate]) => predicate(obj[key])),
+): Predicate<Shape<T>> {
+  type result = [optional: boolean, key: keyof T];
+  const keys = Object.entries(predicates).map(
+    ([key, predicate]: [keyof T, Predicate<any>]): result => [
+      (predicate as { optional?: boolean }).optional === true,
+      key,
+    ],
   );
+  const optional = keys.filter(([optional]) => optional).map(([, key]) => key);
+  const required = keys.filter(([optional]) => !optional).map(([, key]) => key);
+  return refine(
+    hasKeys(...(required as string[])),
+    (obj: Record<string, unknown>): obj is any =>
+      required.every(key => predicates[key]!(obj[key as string])) &&
+      optional.every(key => (key in obj ? predicates[key]!(obj[key as string]) : true)),
+  );
+}
+
+type Shape<T> = Simplify<
+  {
+    [K in keyof T as T[K] extends { optional: true } ? never : K]-?: T[K] extends Predicate<infer U>
+      ? U
+      : never;
+  } & {
+    [K in keyof T as T[K] extends { optional: true } ? K : never]?: T[K] extends Predicate<infer U>
+      ? U
+      : never;
+  }
+>;
+
+type Simplify<T> = T extends never
+  ? never
+  : {
+      [K in keyof T]: T[K];
+    };
+
+export function isOptional<T>(predicate: Predicate<T>): OptionalPropertyPredicate<T> {
+  const p: OptionalPropertyPredicate<T> = (x): x is T => predicate(x);
+  p.optional = true;
+  return p;
 }

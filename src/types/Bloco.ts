@@ -10,11 +10,11 @@ export const isBloco = p.hasShape({
   nome: isNomeBloco,
   processos: p.isArray(isNumProc),
 });
-export type Bloco = p.Static<typeof isBloco>;
+export interface Bloco extends p.Static<typeof isBloco> {}
 
 export const isBlocoProcesso = p.hasShape({
   id: isIdBloco,
   nome: isNomeBloco,
   inserido: p.isBoolean,
 });
-export type BlocoProcesso = p.Static<typeof isBlocoProcesso>;
+export interface BlocoProcesso extends p.Static<typeof isBlocoProcesso> {}
