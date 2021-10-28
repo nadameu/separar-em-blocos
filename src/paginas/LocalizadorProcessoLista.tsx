@@ -1,33 +1,73 @@
-import type { JSXInternal } from 'preact/src/jsx';
+import { createBroadcastService } from '../createBroadcastService';
 import {
   createBloco,
   deleteBloco,
   deleteBlocos,
   getBloco,
   getBlocos,
+  open,
   updateBloco,
 } from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
 import { Handler } from '../lib/Handler';
-import { assert, isNonEmptyString, isNotNull, NonNegativeInteger } from '../lib/predicates';
 import {
+  assert,
+  isDefined,
+  isNonEmptyString,
+  isNotNull,
+  isNotNullish,
+  NonNegativeInteger,
+} from '../lib/predicates';
+import {
+  ClientMessage,
+  isRequestMessage,
   isServerErrorAction,
   isServerLoadedAction,
   isServerLoadingAction,
+  ResponseMessage,
   ServerAction,
   ServerErrorAction,
   ServerLoadedAction,
   ServerLoadingAction,
+  ServerMessage,
 } from '../types/Action';
 import { Bloco } from '../types/Bloco';
+import { isNumProc, NumProc } from '../types/NumProc';
 import { ServerState } from '../types/State';
 
+type MapaProcessos = Map<
+  NumProc,
+  {
+    linha: HTMLTableRowElement;
+    checkbox: HTMLInputElement;
+  }
+>;
+
+function selecionarNenhum(processos: MapaProcessos) {
+  for (const { checkbox } of processos.values()) if (checkbox.checked) checkbox.click();
+}
+
 export function LocalizadorProcessoLista() {
+  const tabela = document.querySelector<HTMLTableElement>('table#tabelaLocalizadores');
+  const linhas = Array.from(tabela?.rows ?? { length: 0 });
+  if (linhas.length <= 1) return;
+  const processos = new Map(
+    linhas.slice(1).map((linha, i) => {
+      const endereco = linha.cells[1]?.querySelector<HTMLAnchorElement>('a[href]')?.href;
+      assert(isNotNullish(endereco), `Link do processo não encontrado: linha ${i}.`);
+      const numproc = new URL(endereco).searchParams.get('num_processo');
+      assert(isNumProc(numproc), `Número de processo desconhecido: ${JSON.stringify(numproc)}.`);
+      const checkbox = linha.cells[0]?.querySelector<HTMLInputElement>('input[type=checkbox]');
+      assert(isNotNullish(checkbox), `Caixa de seleção não encontrada: linha ${i}.`);
+      return [numproc, { linha, checkbox }];
+    }),
+  );
+
   const barra = document.getElementById('divInfraBarraLocalizacao');
-  assert(isNotNull(barra));
+  assert(isNotNull(barra), 'Não foi possível inserir os blocos na página.');
   const div = document.createElement('div');
   barra.insertAdjacentElement('afterend', div);
-  preact.render(<Main />, barra.parentElement!, div);
+  preact.render(<Main processos={processos} />, barra.parentElement!, div);
 }
 
 type State = ServerLoadingState | ServerLoadedState | ServerErrorState;
@@ -37,12 +77,76 @@ type ServerErrorState = { status: 'error'; reason: string };
 
 type Lazy<T> = () => T;
 
-function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
+function useServerState(processos: MapaProcessos): [state: State, dispatch: Handler<ServerAction>] {
   const [state, setState] = preactHooks.useState<State>({ status: 'loading', previousValue: null });
 
   const dispatch = preactHooks.useCallback(handler, [state]);
 
-  preactHooks.useEffect(() => dispatch({ type: 'ObterDados' }), []);
+  preactHooks.useEffect(() => {
+    (async () => {
+      const blocos = await getBlocos();
+      bc.publish({ type: 'Blocos', blocos });
+      dispatch({ type: 'AtualizarBlocos', blocos });
+    })();
+  }, []);
+
+  const bc = preactHooks.useMemo(() => {
+    const bc = createBroadcastService(...([{ debug: true }] as unknown as []));
+    const unsubscribe = bc.subscribe(message => {
+      switch (message.type) {
+        case 'Blocos':
+          dispatch({ type: 'AtualizarBlocos', blocos: message.blocos });
+
+        case 'NoOp':
+          break;
+
+        default:
+          expectUnreachable(message);
+      }
+    });
+    return bc;
+
+    function responder(message: ClientMessage, send: Handler<ServerMessage>) {
+      switch (message.type) {
+        case 'InserirProcesso':
+          getBloco(message.bloco).then(async bloco => {
+            if (bloco) {
+              const processos = new Set(bloco.processos);
+              processos.add(message.numproc);
+              await updateBloco({ ...bloco, processos: [...processos] });
+            }
+            responder({ type: 'ObterBlocosProcesso', numproc: message.numproc }, send);
+          });
+          break;
+
+        case 'ObterBlocosProcesso': {
+          getBlocos().then(async blocos => {
+            send({
+              type: 'FornecerBlocosProcesso',
+              blocos: blocos.map(({ processos, ...bloco }) => ({
+                ...bloco,
+                inserido: processos.includes(message.numproc),
+              })),
+            });
+            dispatch({ type: 'AtualizacaoExterna', blocos });
+          });
+          break;
+        }
+        case 'RemoverProcesso':
+          getBloco(message.bloco).then(async bloco => {
+            if (bloco) {
+              const processos = new Set(bloco.processos);
+              processos.delete(message.numproc);
+              await updateBloco({ ...bloco, processos: [...processos] });
+            }
+            responder({ type: 'ObterBlocosProcesso', numproc: message.numproc }, send);
+          });
+          break;
+        default:
+          expectUnreachable(message);
+      }
+    }
+  }, []);
 
   return [state, dispatch];
 
@@ -115,7 +219,16 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
         return [{ status: 'error', reason: action.motivo }];
 
       case 'ObterDados':
-        return [state, async () => ({ type: 'AtualizarBlocos', blocos: await getBlocos() })];
+        return [
+          state,
+          async () => ({
+            type: 'AtualizarBlocos',
+            blocos: (await getBlocos()).map(bloco => ({
+              ...bloco,
+              processos: bloco.processos.filter(n => processos.has(n)),
+            })),
+          }),
+        ];
     }
     expectUnreachable(action);
   }
@@ -124,6 +237,9 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
     action: ServerLoadedAction,
   ): [State, ...Array<() => Promise<ServerAction>>] {
     switch (action.type) {
+      case 'AtualizacaoExterna': {
+        return [{ status: 'error', reason: 'Houve uma atualização externa.' }];
+      }
       case 'CriarBloco': {
         return [
           { status: 'loading', previousValue: state.status === 'loaded' ? state.value : null },
@@ -176,6 +292,16 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
             return { type: 'ObterDados' };
           },
         ];
+      }
+
+      case 'SelecionarProcessos': {
+        assert(isNotNull(selecionarNenhum));
+        selecionarNenhum(processos);
+        const bloco = state.value.blocos.find(b => b.id === action.bloco);
+        assert(isDefined(bloco));
+        for (const processo of bloco.processos)
+          if (processos.has(processo)) processos.get(processo)!.checkbox.click();
+        return [state];
       }
     }
     expectUnreachable(action);
@@ -235,8 +361,8 @@ function useServerState(): [state: State, dispatch: Handler<ServerAction>] {
   }
 }
 
-function Main() {
-  const [state, dispatch] = useServerState();
+function Main(props: { processos: MapaProcessos }) {
+  const [state, dispatch] = useServerState(props.processos);
 
   return (
     <div>
@@ -297,7 +423,12 @@ function Blocos(props: { state: ServerState; dispatch: Handler<ServerAction> }) 
       />
       <button onClick={onSubmit}>Criar</button>
       <br />
-      {props.state.aviso ? <span style="color:red">{props.state.aviso}</span> : null}
+      {props.state.aviso ? (
+        <>
+          <span style="color:red">{props.state.aviso}</span>
+          <button onClick={() => props.dispatch({ type: 'ObterDados' })}>Recarregar dados</button>
+        </>
+      ) : null}
     </>
   );
 }
@@ -347,7 +478,11 @@ function Bloco(props: Bloco & { dispatch: Handler<ServerAction> }) {
         <button onClick={() => props.dispatch({ type: 'ExcluirBloco', bloco: props.id })}>
           Excluir
         </button>
-      ) : null}
+      ) : (
+        <button onClick={() => props.dispatch({ type: 'SelecionarProcessos', bloco: props.id })}>
+          Selecionar processos
+        </button>
+      )}
     </li>
   );
 }

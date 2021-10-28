@@ -1,13 +1,7 @@
-import { createBloco, deleteBloco, getBlocos, open, openBlocos, updateBloco } from './database';
-import {
-  assert,
-  isNonNegativeInteger,
-  isNumber,
-  NonEmptyString,
-  NonNegativeInteger,
-} from './lib/predicates';
+import { assert, isNonNegativeInteger, isNumber, NonNegativeInteger } from './lib/predicates';
 import { LocalizadorProcessoLista } from './paginas/LocalizadorProcessoLista';
-import { Bloco } from './types/Bloco';
+import { ProcessoSelecionar } from './paginas/ProcessoSelecionar';
+import { isNumProc } from './types/NumProc';
 
 function createIncrementId(lastId?: number) {
   let current = isNumber(lastId) ? lastId + 1 : 0;
@@ -22,6 +16,15 @@ async function main() {
   switch (acao) {
     case 'localizador_processos_lista':
       return LocalizadorProcessoLista();
+
+    case 'processo_selecionar': {
+      const numproc = params.get('num_processo');
+      assert(
+        isNumProc(numproc),
+        `Não foi possível analisar o número do proceso: ${JSON.stringify(numproc)}.`,
+      );
+      return ProcessoSelecionar(numproc);
+    }
   }
 }
 

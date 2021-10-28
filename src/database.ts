@@ -31,37 +31,43 @@ export function open() {
   });
 }
 
-export function openBlocos<Mode extends IDBTransactionMode = 'readonly'>(mode?: Mode) {
-  return open().then(db => db.transaction('blocos', mode).store);
-}
-
 export function deleteBlocos() {
   return idb.deleteDB('gm-blocos', {
     blocked() {},
   });
 }
 
-export function getBlocos() {
-  return openBlocos()
-    .then(store => store.getAll())
-    .then(blocos => {
-      assert(blocos.every(isBloco), 'Formato do banco de dados desconhecido.');
-      return blocos;
-    });
+export async function getBlocos() {
+  const db = await open();
+  const blocos = await db.getAll('blocos');
+  assert(blocos.every(isBloco), 'Formato do banco de dados desconhecido.');
+  return blocos.sort((a, b) => {
+    const [c, d] = [a, b].map(x => x.nome) as [NonEmptyString, NonEmptyString];
+    const [e, f] = [c, d].map(x => x.toLowerCase()) as [NonEmptyString, NonEmptyString];
+    if (e < f) return -1;
+    if (e > f) return +1;
+    if (c < d) return -1;
+    if (c > d) return +1;
+    throw new Error(`Há dois blocos com o mesmo nome: ${JSON.stringify(c)}.`);
+  });
 }
 
-export function getBloco(id: NonNegativeInteger) {
-  return openBlocos().then(store => store.get(id));
+export async function getBloco(id: NonNegativeInteger) {
+  const db = await open();
+  return db.get('blocos', id);
 }
 
-export function createBloco(bloco: Bloco) {
-  return openBlocos('readwrite').then(store => store.add(bloco));
+export async function createBloco(bloco: Bloco) {
+  const db = await open();
+  return db.add('blocos', bloco);
 }
 
-export function deleteBloco(id: Bloco['id']) {
-  return openBlocos('readwrite').then(store => store.delete(id));
+export async function deleteBloco(id: Bloco['id']) {
+  const db = await open();
+  await db.delete('blocos', id);
 }
 
-export function updateBloco(bloco: Bloco) {
-  return openBlocos('readwrite').then(store => store.put(bloco));
+export async function updateBloco(bloco: Bloco) {
+  const db = await open();
+  await db.put('blocos', bloco);
 }
