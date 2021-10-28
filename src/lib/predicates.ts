@@ -166,3 +166,26 @@ export function isOptional<T>(predicate: Predicate<T>): OptionalPropertyPredicat
   p.optional = true;
   return p;
 }
+
+export function isTaggedUnion<
+  T extends string,
+  P extends Record<string, Record<string, Predicate<any>>>,
+>(tagName: T, union: P): TaggedUnion<T, P> {
+  return isAnyOf(
+    ...Object.entries(union).map(
+      ([tag, extraProperties]: [string, Record<string, Predicate<any>>]) =>
+        refine(hasShape({ [tagName]: isLiteral(tag) }), hasShape(extraProperties)),
+    ),
+  ) as TaggedUnion<T, P>;
+}
+
+type TaggedUnion<
+  T extends string,
+  P extends Record<string, Record<string, Predicate<any>>>,
+> = T extends never
+  ? never
+  : Predicate<
+      {
+        [Tag in keyof P]: Simplify<{ [TagName in T]: Tag } & Shape<P[Tag]>>;
+      }[keyof P]
+    >;
