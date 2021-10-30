@@ -75,12 +75,12 @@ type Lazy<T> = () => T;
 
 type Cmd<T> = Lazy<Promise<T>>;
 
-function useListaState(
-  initialState: Model,
-  initialCommand: Cmd<Action> | null,
-  update: (state: Model, action: Action) => [Model, ...([Cmd<Action>] | [])],
+function mount(
+  init: Lazy<[Model] | [Model, Cmd<Action>]>,
+  update: (state: Model, action: Action) => [Model] | [Model, Cmd<Action>],
 ): [state: Model, dispatch: Handler<Action>] {
-  console.log('ran');
+  const [initialState, initialCommand] = preactHooks.useMemo(init, []);
+
   const [state, setState] = preactHooks.useState(initialState);
 
   const dispatch = preactHooks.useCallback(handler, [state]);
@@ -196,9 +196,8 @@ function update(state: Model, action: Action): [Model, ...([Cmd<Action>] | [])] 
 }
 
 function Main(props: { mapa: MapaProcessos }) {
-  const [state, dispatch] = useListaState(
-    { status: 'init', mapa: props.mapa },
-    () => Promise.resolve(Action.GetBlocos()),
+  const [state, dispatch] = mount(
+    () => [{ status: 'init', mapa: props.mapa }, () => Promise.resolve(Action.GetBlocos())],
     update,
   );
 
