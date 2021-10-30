@@ -1,39 +1,16 @@
-import { createBroadcastService } from '../createBroadcastService';
 import {
   createBloco,
   deleteBloco,
   deleteBlocos,
   getBloco,
   getBlocos,
-  open,
   updateBloco,
 } from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
 import { Handler } from '../lib/Handler';
-import {
-  assert,
-  isDefined,
-  isNonEmptyString,
-  isNotNull,
-  isNotNullish,
-  NonNegativeInteger,
-} from '../lib/predicates';
-import {
-  ClientMessage,
-  isRequestMessage,
-  isServerErrorAction,
-  isServerLoadedAction,
-  isServerLoadingAction,
-  ResponseMessage,
-  ServerAction,
-  ServerErrorAction,
-  ServerLoadedAction,
-  ServerLoadingAction,
-  ServerMessage,
-} from '../types/Action';
+import * as p from '../lib/predicates';
 import { Bloco } from '../types/Bloco';
 import { isNumProc, NumProc } from '../types/NumProc';
-import { ServerState } from '../types/State';
 
 type MapaProcessos = Map<
   NumProc,
@@ -43,6 +20,30 @@ type MapaProcessos = Map<
   }
 >;
 
+type Model =
+  | { status: 'init'; mapa: MapaProcessos }
+  | { status: 'loaded'; mapa: MapaProcessos; blocos: Bloco[]; aviso?: string }
+  | { status: 'error'; error: unknown };
+
+const Action = {
+  Blocos: (blocos: Bloco[]) => ({ type: 'Blocos' as const, blocos }),
+  CriarBloco: (nome: p.NonEmptyString) => ({ type: 'CriarBloco' as const, nome }),
+  ExcluirBD: () => ({ type: 'ExcluirBD' as const }),
+  ExcluirBloco: (bloco: p.NonNegativeInteger) => ({ type: 'ExcluirBloco' as const, bloco }),
+  GetBlocos: () => ({ type: 'GetBlocos' as const }),
+  NoOp: () => ({ type: 'NoOp' as const }),
+  RenomearBloco: (bloco: p.NonNegativeInteger, nome: p.NonEmptyString) => ({
+    type: 'RenomearBloco' as const,
+    bloco,
+    nome,
+  }),
+  SelecionarProcessos: (bloco: p.NonNegativeInteger) => ({
+    type: 'SelecionarProcessos' as const,
+    bloco,
+  }),
+};
+type Action = ReturnType<typeof Action[keyof typeof Action]>;
+
 function selecionarNenhum(processos: MapaProcessos) {
   for (const { checkbox } of processos.values()) if (checkbox.checked) checkbox.click();
 }
@@ -51,327 +52,164 @@ export function LocalizadorProcessoLista() {
   const tabela = document.querySelector<HTMLTableElement>('table#tabelaLocalizadores');
   const linhas = Array.from(tabela?.rows ?? { length: 0 });
   if (linhas.length <= 1) return;
-  const processos = new Map(
+  const mapa: MapaProcessos = new Map(
     linhas.slice(1).map((linha, i) => {
       const endereco = linha.cells[1]?.querySelector<HTMLAnchorElement>('a[href]')?.href;
-      assert(isNotNullish(endereco), `Link do processo não encontrado: linha ${i}.`);
+      p.assert(p.isNotNullish(endereco), `Link do processo não encontrado: linha ${i}.`);
       const numproc = new URL(endereco).searchParams.get('num_processo');
-      assert(isNumProc(numproc), `Número de processo desconhecido: ${JSON.stringify(numproc)}.`);
+      p.assert(isNumProc(numproc), `Número de processo desconhecido: ${JSON.stringify(numproc)}.`);
       const checkbox = linha.cells[0]?.querySelector<HTMLInputElement>('input[type=checkbox]');
-      assert(isNotNullish(checkbox), `Caixa de seleção não encontrada: linha ${i}.`);
+      p.assert(p.isNotNullish(checkbox), `Caixa de seleção não encontrada: linha ${i}.`);
       return [numproc, { linha, checkbox }];
     }),
   );
 
   const barra = document.getElementById('divInfraBarraLocalizacao');
-  assert(isNotNull(barra), 'Não foi possível inserir os blocos na página.');
+  p.assert(p.isNotNull(barra), 'Não foi possível inserir os blocos na página.');
   const div = document.createElement('div');
   barra.insertAdjacentElement('afterend', div);
-  preact.render(<Main processos={processos} />, barra.parentElement!, div);
+  preact.render(<Main mapa={mapa} />, barra.parentElement!, div);
 }
-
-type State = ServerLoadingState | ServerLoadedState | ServerErrorState;
-type ServerLoadingState = { status: 'loading'; previousValue: ServerState | null };
-type ServerLoadedState = { status: 'loaded'; value: ServerState };
-type ServerErrorState = { status: 'error'; reason: string };
 
 type Lazy<T> = () => T;
 
-function useServerState(processos: MapaProcessos): [state: State, dispatch: Handler<ServerAction>] {
-  const [state, setState] = preactHooks.useState<State>({ status: 'loading', previousValue: null });
+type Cmd<T> = Lazy<Promise<T>>;
+
+function useListaState(
+  initialState: Model,
+  initialCommand: Cmd<Action> | null,
+  update: (state: Model, action: Action) => [Model, ...([Cmd<Action>] | [])],
+): [state: Model, dispatch: Handler<Action>] {
+  console.log('ran');
+  const [state, setState] = preactHooks.useState(initialState);
 
   const dispatch = preactHooks.useCallback(handler, [state]);
 
   preactHooks.useEffect(() => {
-    (async () => {
-      const blocos = await getBlocos();
-      bc.publish({ type: 'Blocos', blocos });
-      dispatch({ type: 'AtualizarBlocos', blocos });
-    })();
-  }, []);
-
-  const bc = preactHooks.useMemo(() => {
-    const bc = createBroadcastService(...([{ debug: true }] as unknown as []));
-    const unsubscribe = bc.subscribe(message => {
-      switch (message.type) {
-        case 'Blocos':
-          dispatch({ type: 'AtualizarBlocos', blocos: message.blocos });
-
-        case 'NoOp':
-          break;
-
-        default:
-          expectUnreachable(message);
-      }
-    });
-    return bc;
-
-    function responder(message: ClientMessage, send: Handler<ServerMessage>) {
-      switch (message.type) {
-        case 'InserirProcesso':
-          getBloco(message.bloco).then(async bloco => {
-            if (bloco) {
-              const processos = new Set(bloco.processos);
-              processos.add(message.numproc);
-              await updateBloco({ ...bloco, processos: [...processos] });
-            }
-            responder({ type: 'ObterBlocosProcesso', numproc: message.numproc }, send);
-          });
-          break;
-
-        case 'ObterBlocosProcesso': {
-          getBlocos().then(async blocos => {
-            send({
-              type: 'FornecerBlocosProcesso',
-              blocos: blocos.map(({ processos, ...bloco }) => ({
-                ...bloco,
-                inserido: processos.includes(message.numproc),
-              })),
-            });
-            dispatch({ type: 'AtualizacaoExterna', blocos });
-          });
-          break;
-        }
-        case 'RemoverProcesso':
-          getBloco(message.bloco).then(async bloco => {
-            if (bloco) {
-              const processos = new Set(bloco.processos);
-              processos.delete(message.numproc);
-              await updateBloco({ ...bloco, processos: [...processos] });
-            }
-            responder({ type: 'ObterBlocosProcesso', numproc: message.numproc }, send);
-          });
-          break;
-        default:
-          expectUnreachable(message);
-      }
-    }
+    if (initialCommand)
+      go(initialState, initialCommand)
+        .then(value => setState(value))
+        .catch(error => setState({ status: 'error', error }));
   }, []);
 
   return [state, dispatch];
-
-  function handler(action: ServerAction) {
-    go(state, action, []).then(setState).catch(handleError);
-
-    function go(
-      state: State,
-      action: ServerAction,
-      thunks: Lazy<Promise<ServerAction>>[],
-    ): Promise<State> {
-      const [newState, ...newThunks] = reducer(state, action);
-      const result = extractFirst(thunks, newThunks);
-      if (!result) return Promise.resolve(newState);
-      const [first, rest] = result;
-      return first().then(action => go(newState, action, rest));
-    }
-
-    function extractFirst<T>(xs: T[], ys: T[]): [first: T, rest: T[]] | null {
-      const all = xs.concat(ys);
-      if (all.length === 0) return null;
-      const first = all.splice(0, 1);
-      return [first[0]!, all];
-    }
+  async function go(state: Model, cmd?: Cmd<Action>): Promise<Model>;
+  async function go(...args: [state: Model] | [state: Model, cmd: Cmd<Action>]): Promise<Model>;
+  async function go(state: Model, cmd?: Cmd<Action>): Promise<Model> {
+    if (!cmd) return state;
+    const action = await cmd();
+    return go(...update(state, action));
   }
 
-  function handleError(err: unknown) {
-    let motivo = '';
-    if (err instanceof Error) {
-      motivo = err.message;
-    } else {
-      motivo = String(err);
-    }
-    if (!isNonEmptyString(motivo)) motivo = 'Erro desconhecido.';
-    dispatch({ type: 'Erro', motivo });
-  }
-
-  function loadingReducer(
-    state: ServerLoadingState,
-    action: ServerLoadingAction,
-  ): [State, ...Array<() => Promise<ServerAction>>] {
-    switch (action.type) {
-      case 'AtualizarBlocos': {
-        const blocos = action.blocos.slice().sort((a, b) => {
-          const [c, d] = [a, b].map(x => x.nome.toLowerCase()) as [string, string];
-          if (c < d) return -1;
-          if (c > d) return +1;
-          if (a.nome < b.nome) return -1;
-          if (a.nome > b.nome) return +1;
-          throw new Error(`Há dois blocos com o mesmo nome: ${a.nome}`);
-        });
-        return [
-          {
-            status: 'loaded',
-            value: {
-              aberto: false,
-              ...(state.previousValue || {}),
-              aviso: undefined,
-              blocos,
-            },
-          },
-        ];
-      }
-      case 'DadosInvalidos':
-        if (state.previousValue)
-          return [{ status: 'loaded', value: { ...state.previousValue, aviso: action.motivo } }];
-        return [{ status: 'error', reason: action.motivo }];
-
-      case 'Erro':
-        return [{ status: 'error', reason: action.motivo }];
-
-      case 'ObterDados':
-        return [
-          state,
-          async () => ({
-            type: 'AtualizarBlocos',
-            blocos: (await getBlocos()).map(bloco => ({
-              ...bloco,
-              processos: bloco.processos.filter(n => processos.has(n)),
-            })),
-          }),
-        ];
-    }
-    expectUnreachable(action);
-  }
-  function loadedReducer(
-    state: ServerLoadedState,
-    action: ServerLoadedAction,
-  ): [State, ...Array<() => Promise<ServerAction>>] {
-    switch (action.type) {
-      case 'AtualizacaoExterna': {
-        return [{ status: 'error', reason: 'Houve uma atualização externa.' }];
-      }
-      case 'CriarBloco': {
-        return [
-          { status: 'loading', previousValue: state.status === 'loaded' ? state.value : null },
-          async () => {
-            const blocos = await getBlocos();
-            if (blocos.some(b => b.nome === action.nome))
-              return {
-                type: 'DadosInvalidos',
-                motivo: `Já existe um bloco chamado "${action.nome}".`,
-              };
-            const bloco: Bloco = {
-              id: (Math.max(0, ...blocos.map(x => x.id)) + 1) as NonNegativeInteger,
-              nome: action.nome,
-              processos: [],
-            };
-            await createBloco(bloco);
-            return { type: 'AtualizarBlocos', blocos: [...blocos, bloco] };
-          },
-        ];
-      }
-
-      case 'Erro': {
-        return [{ status: 'error', reason: action.motivo }];
-      }
-
-      case 'ExcluirBloco': {
-        return [
-          { status: 'loading', previousValue: state.value },
-          async () => {
-            await deleteBloco(action.bloco);
-            return { type: 'ObterDados' };
-          },
-        ];
-      }
-
-      case 'RenomearBloco': {
-        return [
-          { status: 'loading', previousValue: state.value },
-          async () => {
-            const blocos = await getBlocos();
-            const bloco = blocos.find(x => x.id === action.bloco);
-            if (!bloco) return { type: 'ObterDados' };
-            const outrosBlocos = blocos.filter(b => b.id !== action.bloco);
-            if (outrosBlocos.some(b => b.nome === action.nome))
-              return {
-                type: 'DadosInvalidos',
-                motivo: `Já existe um bloco chamado "${action.nome}".`,
-              };
-            await updateBloco({ ...bloco, nome: action.nome });
-            return { type: 'ObterDados' };
-          },
-        ];
-      }
-
-      case 'SelecionarProcessos': {
-        assert(isNotNull(selecionarNenhum));
-        selecionarNenhum(processos);
-        const bloco = state.value.blocos.find(b => b.id === action.bloco);
-        assert(isDefined(bloco));
-        for (const processo of bloco.processos)
-          if (processos.has(processo)) processos.get(processo)!.checkbox.click();
-        return [state];
-      }
-    }
-    expectUnreachable(action);
-  }
-  function errorReducer(
-    state: ServerErrorState,
-    action: ServerErrorAction,
-  ): [State, ...Array<() => Promise<ServerAction>>] {
-    switch (action.type) {
-      case 'Erro': {
-        return [state];
-      }
-      case 'ExcluirBanco': {
-        return [
-          { status: 'loading', previousValue: null },
-          () => deleteBlocos().then(() => ({ type: 'ObterDados' })),
-        ];
-      }
-      case 'ObterDados': {
-        return [
-          { status: 'loading', previousValue: null },
-          async () => {
-            return { type: 'AtualizarBlocos', blocos: await getBlocos() };
-          },
-        ];
-      }
-    }
-    expectUnreachable(action);
-  }
-
-  function reducer(
-    state: State,
-    action: ServerAction,
-  ): [State, ...Array<() => Promise<ServerAction>>] {
-    console.log('reducer', action);
-    switch (state.status) {
-      case 'loading':
-        if (isServerLoadingAction(action)) return loadingReducer(state, action);
-        break;
-      case 'loaded':
-        if (isServerLoadedAction(action)) return loadedReducer(state, action);
-        break;
-      case 'error':
-        if (isServerErrorAction(action)) return errorReducer(state, action);
-        break;
-      default:
-        return expectUnreachable(state);
-    }
-    return [
-      {
-        status: 'error',
-        reason: `Ação incompatível com estado atual da aplicação (${
-          state.status
-        }): ${JSON.stringify(action)}.`,
-      },
-    ];
+  function handler(action: Action) {
+    go(...update(state, action))
+      .then(value => setState(value))
+      .catch(error => setState(state => ({ ...state, error })));
   }
 }
 
-function Main(props: { processos: MapaProcessos }) {
-  const [state, dispatch] = useServerState(props.processos);
+function update(state: Model, action: Action): [Model, ...([Cmd<Action>] | [])] {
+  switch (action.type) {
+    case 'Blocos':
+      if (state.status === 'error') return [state];
+      return [{ status: 'loaded', mapa: state.mapa, blocos: action.blocos }];
+
+    case 'CriarBloco':
+      return [
+        state,
+        async () => {
+          const blocos = await getBlocos();
+          if (blocos.some(x => x.nome === action.nome)) return Action.Blocos(blocos);
+          const bloco: Bloco = {
+            id: (Math.max(-1, ...blocos.map(x => x.id)) + 1) as p.NonNegativeInteger,
+            nome: action.nome,
+            processos: [],
+          };
+          await createBloco(bloco);
+          return Action.GetBlocos();
+        },
+      ];
+
+    case 'ExcluirBD':
+      return [
+        state,
+        async () => {
+          await deleteBlocos();
+          return Action.GetBlocos();
+        },
+      ];
+
+    case 'ExcluirBloco':
+      return [
+        state,
+        async () => {
+          await deleteBloco(action.bloco);
+          return Action.GetBlocos();
+        },
+      ];
+
+    case 'GetBlocos':
+      return [
+        state,
+        async () => {
+          const blocos = await getBlocos();
+          return Action.Blocos(blocos);
+        },
+      ];
+
+    case 'NoOp':
+      return [state];
+
+    case 'RenomearBloco':
+      return [
+        state,
+        async () => {
+          const blocos = await getBlocos();
+          const others = blocos.filter(x => x.id !== action.bloco);
+          if (others.some(x => x.nome === action.nome)) return Action.Blocos(blocos);
+          const bloco = await getBloco(action.bloco);
+          if (!bloco) return Action.Blocos(blocos);
+          await updateBloco({ ...bloco, nome: action.nome });
+          return Action.GetBlocos();
+        },
+      ];
+
+    case 'SelecionarProcessos':
+      if (state.status !== 'loaded') return [state];
+      return [
+        state,
+        async () => {
+          selecionarNenhum(state.mapa);
+          const bloco = await getBloco(action.bloco);
+          if (!bloco) return Action.GetBlocos();
+          const boxes = bloco.processos
+            .map(x => state.mapa.get(x)?.checkbox ?? null)
+            .filter((x): x is HTMLInputElement => x != null);
+          for (const box of boxes) {
+            box.click();
+          }
+          return Action.NoOp();
+        },
+      ];
+  }
+  return expectUnreachable(action);
+}
+
+function Main(props: { mapa: MapaProcessos }) {
+  const [state, dispatch] = useListaState(
+    { status: 'init', mapa: props.mapa },
+    () => Promise.resolve(Action.GetBlocos()),
+    update,
+  );
 
   return (
     <div>
-      {state.status === 'loading' ? (
-        <Loading />
-      ) : state.status === 'error' ? (
-        <ShowError reason={state.reason} dispatch={dispatch} />
+      {state.status === 'error' ? (
+        <ShowError reason={String(state.error)} dispatch={dispatch} />
+      ) : state.status === 'loaded' ? (
+        <Blocos state={state} dispatch={dispatch} />
       ) : (
-        <Blocos state={state.value} dispatch={dispatch} />
+        <Loading />
       )}
     </div>
   );
@@ -381,23 +219,23 @@ function Loading() {
   return <>Carregando...</>;
 }
 
-function ShowError({ dispatch, reason }: { reason: string; dispatch: Handler<ServerAction> }) {
+function ShowError({ dispatch, reason }: { reason: string; dispatch: Handler<Action> }) {
   return (
     <>
       <span style="color:red; font-weight: bold;">{reason}</span>
       <br />
       <br />
-      <button onClick={() => dispatch({ type: 'ObterDados' })}>Tentar carregar dados salvos</button>
-      <button onClick={() => dispatch({ type: 'ExcluirBanco' })}>Apagar os dados locais</button>
+      <button onClick={() => dispatch(Action.GetBlocos())}>Tentar carregar dados salvos</button>
+      <button onClick={() => dispatch(Action.ExcluirBD())}>Apagar os dados locais</button>
     </>
   );
 }
 
-function Blocos(props: { state: ServerState; dispatch: Handler<ServerAction> }) {
+function Blocos(props: { state: Extract<Model, { status: 'loaded' }>; dispatch: Handler<Action> }) {
   const [nome, setNome] = preactHooks.useState('');
 
   const onSubmit = preactHooks.useCallback(() => {
-    if (isNonEmptyString(nome)) props.dispatch({ type: 'CriarBloco', nome });
+    if (p.isNonEmptyString(nome)) props.dispatch(Action.CriarBloco(nome));
     setNome('');
   }, [nome]);
 
@@ -426,14 +264,14 @@ function Blocos(props: { state: ServerState; dispatch: Handler<ServerAction> }) 
       {props.state.aviso ? (
         <>
           <span style="color:red">{props.state.aviso}</span>
-          <button onClick={() => props.dispatch({ type: 'ObterDados' })}>Recarregar dados</button>
+          <button onClick={() => props.dispatch(Action.GetBlocos())}>Recarregar dados</button>
         </>
       ) : null}
     </>
   );
 }
 
-function Bloco(props: Bloco & { dispatch: Handler<ServerAction> }) {
+function Bloco(props: Bloco & { dispatch: Handler<Action> }) {
   const [editing, setEditing] = preactHooks.useState(false);
   const [nome, setNome] = preactHooks.useState(props.nome as string);
   const ref = preactHooks.useRef<HTMLInputElement>(null);
@@ -446,9 +284,9 @@ function Bloco(props: Bloco & { dispatch: Handler<ServerAction> }) {
   const onKey = preactHooks.useCallback(
     (evt: KeyboardEvent) => {
       if (evt.key === 'Enter') {
-        if (isNonEmptyString(nome)) {
+        if (p.isNonEmptyString(nome)) {
           setNome(props.nome);
-          props.dispatch({ type: 'RenomearBloco', bloco: props.id, nome });
+          props.dispatch(Action.RenomearBloco(props.id, nome));
         } else {
           setNome(props.nome);
         }
@@ -475,11 +313,9 @@ function Bloco(props: Bloco & { dispatch: Handler<ServerAction> }) {
       (#{props.id}) [ {props.processos.join(', ')} ]
       {editing ? null : <button onClick={() => setEditing(true)}>Renomear</button>}
       {props.processos.length === 0 ? (
-        <button onClick={() => props.dispatch({ type: 'ExcluirBloco', bloco: props.id })}>
-          Excluir
-        </button>
+        <button onClick={() => props.dispatch(Action.ExcluirBloco(props.id))}>Excluir</button>
       ) : (
-        <button onClick={() => props.dispatch({ type: 'SelecionarProcessos', bloco: props.id })}>
+        <button onClick={() => props.dispatch(Action.SelecionarProcessos(props.id))}>
           Selecionar processos
         </button>
       )}
