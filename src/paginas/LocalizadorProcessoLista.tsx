@@ -1,3 +1,4 @@
+import { createBroadcastService } from '../createBroadcastService';
 import {
   createBloco,
   deleteBloco,
@@ -9,6 +10,7 @@ import {
 import { expectUnreachable } from '../lib/expectUnreachable';
 import { Handler } from '../lib/Handler';
 import * as p from '../lib/predicates';
+import { BroadcastMessage } from '../types/Action';
 import { Bloco } from '../types/Bloco';
 import { isNumProc, NumProc } from '../types/NumProc';
 
@@ -77,7 +79,9 @@ type Cmd<T> = Lazy<Promise<T>>;
 
 function mount(
   init: Lazy<[Model] | [Model, Cmd<Action>]>,
-  update: (state: Model, action: Action) => [Model] | [Model, Cmd<Action>],
+  createUpdate: (
+    send: (msg: BroadcastMessage) => void,
+  ) => (state: Model, action: Action) => [Model] | [Model, Cmd<Action>],
 ): [state: Model, dispatch: Handler<Action>] {
   const [initialState, initialCommand] = preactHooks.useMemo(init, []);
 
@@ -90,6 +94,24 @@ function mount(
       go(initialState, initialCommand)
         .then(value => setState(value))
         .catch(error => setState({ status: 'error', error }));
+  }, []);
+
+  const update = preactHooks.useMemo(() => {
+    const bc = createBroadcastService();
+    bc.subscribe(msg => {
+      switch (msg.type) {
+        case 'Blocos':
+          dispatch(msg);
+          break;
+
+        case 'NoOp':
+          break;
+
+        default:
+          expectUnreachable(msg);
+      }
+    });
+    return createUpdate(bc.publish);
   }, []);
 
   return [state, dispatch];
@@ -108,97 +130,102 @@ function mount(
   }
 }
 
-function update(state: Model, action: Action): [Model, ...([Cmd<Action>] | [])] {
-  switch (action.type) {
-    case 'Blocos':
-      if (state.status === 'error') return [state];
-      return [{ status: 'loaded', mapa: state.mapa, blocos: action.blocos }];
+function createUpdate(
+  send: Handler<BroadcastMessage>,
+): (state: Model, action: Action) => [Model, ...([Cmd<Action>] | [])] {
+  return (state, action) => {
+    switch (action.type) {
+      case 'Blocos':
+        if (state.status === 'error') return [state];
+        return [{ status: 'loaded', mapa: state.mapa, blocos: action.blocos }];
 
-    case 'CriarBloco':
-      return [
-        state,
-        async () => {
-          const blocos = await getBlocos();
-          if (blocos.some(x => x.nome === action.nome)) return Action.Blocos(blocos);
-          const bloco: Bloco = {
-            id: (Math.max(-1, ...blocos.map(x => x.id)) + 1) as p.NonNegativeInteger,
-            nome: action.nome,
-            processos: [],
-          };
-          await createBloco(bloco);
-          return Action.GetBlocos();
-        },
-      ];
+      case 'CriarBloco':
+        return [
+          state,
+          async () => {
+            const blocos = await getBlocos();
+            if (blocos.some(x => x.nome === action.nome)) return Action.Blocos(blocos);
+            const bloco: Bloco = {
+              id: (Math.max(-1, ...blocos.map(x => x.id)) + 1) as p.NonNegativeInteger,
+              nome: action.nome,
+              processos: [],
+            };
+            await createBloco(bloco);
+            return Action.GetBlocos();
+          },
+        ];
 
-    case 'ExcluirBD':
-      return [
-        state,
-        async () => {
-          await deleteBlocos();
-          return Action.GetBlocos();
-        },
-      ];
+      case 'ExcluirBD':
+        return [
+          state,
+          async () => {
+            await deleteBlocos();
+            return Action.GetBlocos();
+          },
+        ];
 
-    case 'ExcluirBloco':
-      return [
-        state,
-        async () => {
-          await deleteBloco(action.bloco);
-          return Action.GetBlocos();
-        },
-      ];
+      case 'ExcluirBloco':
+        return [
+          state,
+          async () => {
+            await deleteBloco(action.bloco);
+            return Action.GetBlocos();
+          },
+        ];
 
-    case 'GetBlocos':
-      return [
-        state,
-        async () => {
-          const blocos = await getBlocos();
-          return Action.Blocos(blocos);
-        },
-      ];
+      case 'GetBlocos':
+        return [
+          state,
+          async () => {
+            const blocos = await getBlocos();
+            send(Action.Blocos(blocos));
+            return Action.Blocos(blocos);
+          },
+        ];
 
-    case 'NoOp':
-      return [state];
+      case 'NoOp':
+        return [state];
 
-    case 'RenomearBloco':
-      return [
-        state,
-        async () => {
-          const blocos = await getBlocos();
-          const others = blocos.filter(x => x.id !== action.bloco);
-          if (others.some(x => x.nome === action.nome)) return Action.Blocos(blocos);
-          const bloco = await getBloco(action.bloco);
-          if (!bloco) return Action.Blocos(blocos);
-          await updateBloco({ ...bloco, nome: action.nome });
-          return Action.GetBlocos();
-        },
-      ];
+      case 'RenomearBloco':
+        return [
+          state,
+          async () => {
+            const blocos = await getBlocos();
+            const others = blocos.filter(x => x.id !== action.bloco);
+            if (others.some(x => x.nome === action.nome)) return Action.Blocos(blocos);
+            const bloco = await getBloco(action.bloco);
+            if (!bloco) return Action.Blocos(blocos);
+            await updateBloco({ ...bloco, nome: action.nome });
+            return Action.GetBlocos();
+          },
+        ];
 
-    case 'SelecionarProcessos':
-      if (state.status !== 'loaded') return [state];
-      return [
-        state,
-        async () => {
-          selecionarNenhum(state.mapa);
-          const bloco = await getBloco(action.bloco);
-          if (!bloco) return Action.GetBlocos();
-          const boxes = bloco.processos
-            .map(x => state.mapa.get(x)?.checkbox ?? null)
-            .filter((x): x is HTMLInputElement => x != null);
-          for (const box of boxes) {
-            box.click();
-          }
-          return Action.NoOp();
-        },
-      ];
-  }
-  return expectUnreachable(action);
+      case 'SelecionarProcessos':
+        if (state.status !== 'loaded') return [state];
+        return [
+          state,
+          async () => {
+            selecionarNenhum(state.mapa);
+            const bloco = await getBloco(action.bloco);
+            if (!bloco) return Action.GetBlocos();
+            const boxes = bloco.processos
+              .map(x => state.mapa.get(x)?.checkbox ?? null)
+              .filter((x): x is HTMLInputElement => x != null);
+            for (const box of boxes) {
+              box.click();
+            }
+            return Action.NoOp();
+          },
+        ];
+    }
+    return expectUnreachable(action);
+  };
 }
 
 function Main(props: { mapa: MapaProcessos }) {
   const [state, dispatch] = mount(
     () => [{ status: 'init', mapa: props.mapa }, () => Promise.resolve(Action.GetBlocos())],
-    update,
+    createUpdate,
   );
 
   return (
@@ -283,15 +310,11 @@ function Bloco(props: Bloco & { dispatch: Handler<Action> }) {
   const onKey = preactHooks.useCallback(
     (evt: KeyboardEvent) => {
       if (evt.key === 'Enter') {
-        if (p.isNonEmptyString(nome)) {
-          setNome(props.nome);
-          props.dispatch(Action.RenomearBloco(props.id, nome));
-        } else {
-          setNome(props.nome);
-        }
         setEditing(false);
+        if (p.isNonEmptyString(nome)) {
+          props.dispatch(Action.RenomearBloco(props.id, nome));
+        }
       } else if (evt.key === 'Escape') {
-        setNome(props.nome);
         setEditing(false);
       }
     },
@@ -303,21 +326,40 @@ function Bloco(props: Bloco & { dispatch: Handler<Action> }) {
         <input
           ref={ref}
           onInput={evt => setNome(evt.currentTarget.value)}
-          onKeyUp={onKey}
+          onKeyPress={onKey}
           value={nome}
         />
-      ) : (
+      ) : props.processos.length === 0 ? (
         props.nome
-      )}{' '}
-      (#{props.id}) [ {props.processos.join(', ')} ]
-      {editing ? null : <button onClick={() => setEditing(true)}>Renomear</button>}
-      {props.processos.length === 0 ? (
-        <button onClick={() => props.dispatch(Action.ExcluirBloco(props.id))}>Excluir</button>
       ) : (
         <button onClick={() => props.dispatch(Action.SelecionarProcessos(props.id))}>
-          Selecionar processos
+          {props.nome}
+        </button>
+      )}{' '}
+      ({props.processos.length} processo{props.processos.length > 1 ? 's' : ''})
+      {editing ? null : (
+        <button
+          onClick={() => {
+            setNome(props.nome);
+            setEditing(true);
+          }}
+        >
+          Renomear
         </button>
       )}
+      <button
+        onClick={() => {
+          let confirmed = true;
+          const len = props.processos.length;
+          if (len > 0)
+            confirmed = window.confirm(
+              `Este bloco possui ${len} processo${len > 1 ? 's' : ''}. Deseja excluí-lo?`,
+            );
+          if (confirmed) props.dispatch(Action.ExcluirBloco(props.id));
+        }}
+      >
+        Excluir
+      </button>
     </li>
   );
 }
