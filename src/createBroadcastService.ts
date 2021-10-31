@@ -13,6 +13,8 @@ export function createBroadcastService({ debug = false } = {}) {
   return { publish, subscribe, destroy };
   function destroy() {
     bc.removeEventListener('message', listener);
+    handlers.clear();
+    bc.close();
   }
   function listener(evt: MessageEvent<unknown>) {
     if (debug) {
