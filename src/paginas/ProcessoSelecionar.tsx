@@ -31,6 +31,12 @@ div#gm-blocos {
   background: black;
   color:white;
 }
+div#gm-blocos-grid {
+  display: grid;
+  grid-template: "checkbox descricao transportar ." auto / auto auto auto 0;
+  grid-gap: 0 4px;
+  align-items: start;
+}
 `;
 
 export function ProcessoSelecionar(numproc: NumProc) {
@@ -190,11 +196,11 @@ function Blocos(props: { blocos: BlocoProcesso[]; dispatch: Handler<Action> }) {
   return (
     <>
       <h2>Blocos</h2>
-      <ul>
+      <div id="gm-blocos-grid">
         {props.blocos.map(info => (
           <Bloco key={info.id} {...info} dispatch={props.dispatch} />
         ))}
-      </ul>
+      </div>
     </>
   );
 }
@@ -211,17 +217,27 @@ function Bloco(props: BlocoProcesso & { dispatch: Handler<Action> }) {
     [props.dispatch],
   );
   return (
-    <li>
-      <label>
-        <input type="checkbox" checked={props.inserido} onChange={onChange} /> {props.nome}
-      </label>{' '}
-      {props.inserido ? null : (
-        <input
-          type="image"
-          src="infra_css/imagens/transportar.gif"
-          onClick={() => props.dispatch(Action.InserirEFechar(props.id))}
-        />
+    <>
+      <input
+        id={`gm-bloco-${props.id}`}
+        type="checkbox"
+        checked={props.inserido}
+        onChange={onChange}
+      />{' '}
+      <label for={`gm-bloco-${props.id}`}>{props.nome}</label>
+      {props.inserido ? (
+        <span />
+      ) : (
+        <>
+          {' '}
+          <input
+            type="image"
+            src="infra_css/imagens/transportar.gif"
+            onClick={() => props.dispatch(Action.InserirEFechar(props.id))}
+          />
+        </>
       )}
-    </li>
+      <br />
+    </>
   );
 }
