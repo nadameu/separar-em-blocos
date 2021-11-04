@@ -205,14 +205,14 @@ function createUpdate(
         return [
           state,
           async () => {
-            selecionarNenhum(state.mapa);
             const bloco = await getBloco(action.bloco);
             if (!bloco) return Action.GetBlocos();
-            const boxes = bloco.processos
-              .map(x => state.mapa.get(x)?.checkbox ?? null)
-              .filter((x): x is HTMLInputElement => x != null);
-            for (const box of boxes) {
-              box.click();
+            for (const [numproc, { checkbox }] of state.mapa) {
+              if (bloco.processos.includes(numproc)) {
+                if (!checkbox.checked) checkbox.click();
+              } else {
+                if (checkbox.checked) checkbox.click();
+              }
             }
             return Action.NoOp();
           },
