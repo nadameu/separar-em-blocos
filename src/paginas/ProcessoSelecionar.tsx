@@ -18,95 +18,75 @@ type Model = { numproc: NumProc; bc: BC } & (
 type Action = { (state: Model, dispatch: Dispatch): Model };
 type Dispatch = { (action: Action): void };
 
-function fromAsync(
-  loading: Model | { (state: Model): Model },
-  asyncAction: { (state: Model): Promise<Action> },
-  onError: { (error: unknown): Action },
-): Action {
+function fromAsync(asyncAction: { (state: Model): Promise<Action> }): Action {
   return (state, dispatch) => {
-    asyncAction(state).catch(onError).then(dispatch);
-    if (typeof loading === 'function') return loading(state);
-    return loading;
+    asyncAction(state).catch(Action.Error).then(dispatch);
+    return Action.Carregando()(state, dispatch);
   };
 }
-
-const Carregando = (state: Model): Model => {
-  switch (state.status) {
-    case 'Loading':
-      return state;
-
-    case 'Error':
-      return { status: 'Loading', bc: state.bc, numproc: state.numproc };
-
-    case 'Success':
-      return { ...state, loading: true };
-  }
-  return expectUnreachable(state);
-};
 
 const Action = {
   Blocos(blocos: Bloco[]): Action {
     return ({ bc, numproc }) => ({ status: 'Success', blocos, bc, numproc, loading: false });
   },
+  Carregando(): Action {
+    return state => {
+      switch (state.status) {
+        case 'Loading':
+          return state;
+
+        case 'Error':
+          return { status: 'Loading', bc: state.bc, numproc: state.numproc };
+
+        case 'Success':
+          return { ...state, loading: true };
+      }
+      return expectUnreachable(state);
+    };
+  },
   Error(reason: unknown): Action {
     return ({ bc, numproc }) => ({ status: 'Error', reason, bc, numproc });
   },
   Inserir(id: Bloco['id']): Action {
-    return fromAsync(
-      Carregando,
-      async ({ numproc }) => {
-        const bloco = await getBloco(id);
-        if (!bloco) return Action.ObterBlocos();
-        const processos = new Set(bloco.processos).add(numproc);
-        await updateBloco({ ...bloco, processos: [...processos] });
-        return Action.ObterBlocos();
-      },
-      Action.Error,
-    );
+    return fromAsync(async ({ numproc }) => {
+      const bloco = await getBloco(id);
+      if (!bloco) return Action.ObterBlocos();
+      const processos = new Set(bloco.processos).add(numproc);
+      await updateBloco({ ...bloco, processos: [...processos] });
+      return Action.ObterBlocos();
+    });
   },
   InserirEFechar(id: Bloco['id']): Action {
-    return fromAsync(
-      Carregando,
-      async ({ bc, numproc }) => {
-        const bloco = await getBloco(id);
-        if (!bloco) return Action.ObterBlocos();
-        const processos = new Set(bloco.processos).add(numproc);
-        await updateBloco({ ...bloco, processos: [...processos] });
-        const blocos = await getBlocos();
-        bc.publish({ type: 'Blocos', blocos });
-        window.close();
-        return Action.Blocos(blocos);
-      },
-      Action.Error,
-    );
+    return fromAsync(async ({ bc, numproc }) => {
+      const bloco = await getBloco(id);
+      if (!bloco) return Action.ObterBlocos();
+      const processos = new Set(bloco.processos).add(numproc);
+      await updateBloco({ ...bloco, processos: [...processos] });
+      const blocos = await getBlocos();
+      bc.publish({ type: 'Blocos', blocos });
+      window.close();
+      return Action.Blocos(blocos);
+    });
   },
   NoOp(): Action {
     return state => state;
   },
   ObterBlocos(): Action {
-    return fromAsync(
-      Carregando,
-      async ({ bc }) => {
-        const blocos = await getBlocos();
-        bc.publish({ type: 'Blocos', blocos });
-        return Action.Blocos(blocos);
-      },
-      Action.Error,
-    );
+    return fromAsync(async ({ bc }) => {
+      const blocos = await getBlocos();
+      bc.publish({ type: 'Blocos', blocos });
+      return Action.Blocos(blocos);
+    });
   },
   Remover(id: Bloco['id']): Action {
-    return fromAsync(
-      Carregando,
-      async ({ numproc }) => {
-        const bloco = await getBloco(id);
-        if (!bloco) return Action.ObterBlocos();
-        const processos = new Set(bloco.processos);
-        processos.delete(numproc);
-        await updateBloco({ ...bloco, processos: [...processos] });
-        return Action.ObterBlocos();
-      },
-      Action.Error,
-    );
+    return fromAsync(async ({ numproc }) => {
+      const bloco = await getBloco(id);
+      if (!bloco) return Action.ObterBlocos();
+      const processos = new Set(bloco.processos);
+      processos.delete(numproc);
+      await updateBloco({ ...bloco, processos: [...processos] });
+      return Action.ObterBlocos();
+    });
   },
 };
 
