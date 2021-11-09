@@ -1,4 +1,5 @@
-import { JSXInternal } from 'preact/src/jsx';
+import { Fragment, h, JSX, render } from 'preact';
+import { useCallback, useEffect, useMemo, useReducer } from 'preact/hooks';
 import { createBroadcastService } from '../createBroadcastService';
 import { getBloco, getBlocos, updateBloco } from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
@@ -133,18 +134,18 @@ export function ProcessoSelecionar(numproc: NumProc) {
   );
   const div = document.createElement('div');
   mainMenu.insertAdjacentElement('beforebegin', div);
-  preact.render(<Main numproc={numproc} />, mainMenu, div);
+  render(<Main numproc={numproc} />, mainMenu, div);
 }
 
 function mount(init: { (): [Model] | [Model, Action] }): [Model, Handler<Action>] {
-  const [initialState, initialAction] = preactHooks.useMemo(init, []);
+  const [initialState, initialAction] = useMemo(init, []);
 
-  const [state, dispatch] = preactHooks.useReducer((state: Model, action: Action): Model => {
+  const [state, dispatch] = useReducer((state: Model, action: Action): Model => {
     const next = action(state, dispatch);
     return next;
   }, initialState);
 
-  preactHooks.useEffect(() => {
+  useEffect(() => {
     if (initialAction) dispatch(initialAction);
   }, []);
 
@@ -200,8 +201,8 @@ function Blocos(props: { blocos: BlocoProcesso[]; dispatch: Handler<Action>; dis
 }
 
 function Bloco(props: BlocoProcesso & { dispatch: Handler<Action>; disabled: boolean }) {
-  const onChange = preactHooks.useCallback(
-    (evt: JSXInternal.TargetedEvent<HTMLInputElement>) => {
+  const onChange = useCallback(
+    (evt: JSX.TargetedEvent<HTMLInputElement>) => {
       if (evt.currentTarget.checked) {
         props.dispatch(Action.Inserir(props.id));
       } else {

@@ -1,3 +1,5 @@
+import { Fragment, h, render } from 'preact';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { createBroadcastService } from '../createBroadcastService';
 import {
   createBloco,
@@ -70,7 +72,7 @@ export function LocalizadorProcessoLista() {
   p.assert(p.isNotNull(barra), 'Não foi possível inserir os blocos na página.');
   const div = document.createElement('div');
   barra.insertAdjacentElement('afterend', div);
-  preact.render(<Main mapa={mapa} />, barra.parentElement!, div);
+  render(<Main mapa={mapa} />, barra.parentElement!, div);
 }
 
 type Lazy<T> = () => T;
@@ -83,20 +85,20 @@ function mount(
     send: (msg: BroadcastMessage) => void,
   ) => (state: Model, action: Action) => [Model] | [Model, Cmd<Action>],
 ): [state: Model, dispatch: Handler<Action>] {
-  const [initialState, initialCommand] = preactHooks.useMemo(init, []);
+  const [initialState, initialCommand] = useMemo(init, []);
 
-  const [state, setState] = preactHooks.useState(initialState);
+  const [state, setState] = useState(initialState);
 
-  const dispatch = preactHooks.useCallback(handler, [state]);
+  const dispatch = useCallback(handler, [state]);
 
-  preactHooks.useEffect(() => {
+  useEffect(() => {
     if (initialCommand)
       go(initialState, initialCommand)
         .then(value => setState(value))
         .catch(error => setState({ status: 'error', error }));
   }, []);
 
-  const update = preactHooks.useMemo(() => {
+  const update = useMemo(() => {
     const bc = createBroadcastService();
     bc.subscribe(msg => {
       switch (msg.type) {
@@ -258,14 +260,14 @@ function ShowError({ dispatch, reason }: { reason: string; dispatch: Handler<Act
 }
 
 function Blocos(props: { state: Extract<Model, { status: 'loaded' }>; dispatch: Handler<Action> }) {
-  const [nome, setNome] = preactHooks.useState('');
+  const [nome, setNome] = useState('');
 
-  const onSubmit = preactHooks.useCallback(() => {
+  const onSubmit = useCallback(() => {
     if (p.isNonEmptyString(nome)) props.dispatch(Action.CriarBloco(nome));
     setNome('');
   }, [nome]);
 
-  const onKeyPress = preactHooks.useCallback(
+  const onKeyPress = useCallback(
     (evt: KeyboardEvent) => {
       if (evt.key === 'Enter') onSubmit();
     },
@@ -298,16 +300,16 @@ function Blocos(props: { state: Extract<Model, { status: 'loaded' }>; dispatch: 
 }
 
 function Bloco(props: Bloco & { dispatch: Handler<Action> }) {
-  const [editing, setEditing] = preactHooks.useState(false);
-  const [nome, setNome] = preactHooks.useState(props.nome as string);
-  const ref = preactHooks.useRef<HTMLInputElement>(null);
-  preactHooks.useEffect(() => {
+  const [editing, setEditing] = useState(false);
+  const [nome, setNome] = useState(props.nome as string);
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
     if (ref.current) {
       ref.current.select();
       ref.current.focus();
     }
   }, [editing]);
-  const onKey = preactHooks.useCallback(
+  const onKey = useCallback(
     (evt: KeyboardEvent) => {
       if (evt.key === 'Enter') {
         setEditing(false);
