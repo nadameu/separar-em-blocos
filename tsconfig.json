@@ -5,8 +5,8 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "jsx": "react",
-    "jsxFactory": "preact.createElement",
-    "jsxFragmentFactory": "preact.Fragment",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
     "isolatedModules": true,
     "strict": true,
     "noUncheckedIndexedAccess": true

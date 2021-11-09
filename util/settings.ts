@@ -15,7 +15,6 @@ export const filename = `${pkg.name}.user.js`;
 export const settings: BuildOptions = {
   entryPoints: ['src/index.ts'],
   banner: { js: banner },
-  external: ['preact', 'preact/hooks', 'idb'],
   format: 'esm',
   target: 'firefox78',
   bundle: true,

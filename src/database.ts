@@ -1,4 +1,4 @@
-import type { DBSchema } from 'idb';
+import { DBSchema, deleteDB, openDB } from 'idb';
 import { assert, NonEmptyString, NonNegativeInteger } from './lib/predicates';
 import { Bloco, isBloco } from './types/Bloco';
 
@@ -7,7 +7,7 @@ interface Dados extends DBSchema {
 }
 
 export function open() {
-  return idb.openDB<Dados>('gm-blocos', 4, {
+  return openDB<Dados>('gm-blocos', 4, {
     upgrade(db, oldVersion, newVersion, transaction) {
       if (oldVersion < 1) {
         db.createObjectStore('blocos', { keyPath: 'id' });
@@ -32,7 +32,7 @@ export function open() {
 }
 
 export function deleteBlocos() {
-  return idb.deleteDB('gm-blocos', {
+  return deleteDB('gm-blocos', {
     blocked() {},
   });
 }
