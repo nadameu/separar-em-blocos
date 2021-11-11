@@ -98,7 +98,7 @@ div#gm-blocos {
 div#gm-blocos-grid {
   display: grid;
   grid-template: "checkbox descricao transportar ." auto / auto auto auto 0;
-  grid-gap: 0 4px;
+  grid-gap: 4px;
   align-items: start;
 }
 `;
