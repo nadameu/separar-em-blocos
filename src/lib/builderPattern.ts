@@ -316,6 +316,7 @@ class Builder<B extends BuilderState> {
       getState,
       subscribe(subscriber: () => void) {
         subscribers.add(subscriber);
+        subscriber();
         return () => {
           subscribers.delete(subscriber);
         };

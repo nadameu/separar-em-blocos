@@ -152,7 +152,7 @@ describe('initialized', () => {
     expect(store).to.have.a.property('subscribe').which.is.a('function');
   });
 
-  it('calls the subscribers when the value of the store has changed', () => {
+  it('calls the subscribers when first subscribed, and when the value of the store has changed', () => {
     const store = builderPattern<number>()
       .createAction('add', (state, amount: number) => state + amount)
       .initialize(0);
@@ -160,13 +160,14 @@ describe('initialized', () => {
     const unsubscribe = store.subscribe(() => {
       called++;
     });
-    store.actions.add(0);
-    expect(called).to.equal(0);
-    store.actions.add(3);
     expect(called).to.equal(1);
+    store.actions.add(0);
+    expect(called).to.equal(1);
+    store.actions.add(3);
+    expect(called).to.equal(2);
     unsubscribe();
     store.actions.add(-3);
-    expect(called).to.equal(1);
+    expect(called).to.equal(2);
   });
 
   it('handles external dependencies', () => {
