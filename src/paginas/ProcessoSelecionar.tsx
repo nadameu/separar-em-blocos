@@ -1,7 +1,7 @@
 import { Fragment, h, JSX, render } from 'preact';
 import { useCallback, useEffect, useMemo, useReducer } from 'preact/hooks';
 import { createBroadcastService } from '../createBroadcastService';
-import { getBloco, getBlocos, updateBloco } from '../database';
+import * as Database from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
 import { Handler } from '../lib/Handler';
 import { assert, isNotNull } from '../lib/predicates';
@@ -10,33 +10,41 @@ import { NumProc } from '../types/NumProc';
 
 type BC = ReturnType<typeof createBroadcastService>;
 
-type Model = { numproc: NumProc; bc: BC } & (
+type Dependencias = {
+  DB: Pick<typeof Database, 'getBloco' | 'getBlocos' | 'updateBloco'>;
+  bc: BC;
+  numproc: NumProc;
+};
+
+type Model =
   | { status: 'Loading' }
   | { status: 'Success'; blocos: Bloco[]; loading: boolean }
-  | { status: 'Error'; reason: unknown }
-);
-type Action = { (state: Model, dispatch: Dispatch): Model };
-type Dispatch = { (action: Action): void };
+  | { status: 'Error'; reason: unknown };
 
-function fromAsync(asyncAction: { (state: Model): Promise<Action> }): Action {
-  return (state, dispatch) => {
-    asyncAction(state).catch(Action.Error).then(dispatch);
-    return Action.Carregando()(state, dispatch);
+interface Action {
+  (state: Model, dispatch: Dispatch, extra: Dependencias): Model;
+}
+interface Dispatch {
+  (action: Action): void;
+}
+
+function fromAsync(asyncAction: { (state: Model, extra: Dependencias): Promise<Action> }): Action {
+  return (state, dispatch, extra) => {
+    asyncAction(state, extra).catch(actions.erro).then(dispatch);
+    return actions.carregando()(state, dispatch, extra);
   };
 }
 
-const Action = {
-  Blocos(blocos: Bloco[]): Action {
-    return ({ bc, numproc }) => ({ status: 'Success', blocos, bc, numproc, loading: false });
+const actions = {
+  blocosObtidos(blocos: Bloco[]): Action {
+    return () => ({ status: 'Success', blocos, loading: false });
   },
-  Carregando(): Action {
-    return state => {
+  carregando(): Action {
+    return (state) => {
       switch (state.status) {
         case 'Loading':
-          return state;
-
         case 'Error':
-          return { status: 'Loading', bc: state.bc, numproc: state.numproc };
+          return { status: 'Loading' };
 
         case 'Success':
           return { ...state, loading: true };
@@ -44,48 +52,52 @@ const Action = {
       return expectUnreachable(state);
     };
   },
-  Error(reason: unknown): Action {
-    return ({ bc, numproc }) => ({ status: 'Error', reason, bc, numproc });
+  erro(reason: unknown): Action {
+    return () => ({ status: 'Error', reason });
   },
-  Inserir(id: Bloco['id']): Action {
-    return fromAsync(async ({ numproc }) => {
-      const bloco = await getBloco(id);
-      if (!bloco) return Action.ObterBlocos();
-      const processos = new Set(bloco.processos).add(numproc);
-      await updateBloco({ ...bloco, processos: [...processos] });
-      return Action.ObterBlocos();
+  inserir(id: Bloco['id']): Action {
+    return fromAsync(async ({}, { DB, numproc }) => {
+      const bloco = await DB.getBloco(id);
+      if (bloco) {
+        const processos = new Set(bloco.processos).add(numproc);
+        await DB.updateBloco({ ...bloco, processos: [...processos] });
+      }
+      return actions.obterBlocos();
     });
   },
-  InserirEFechar(id: Bloco['id']): Action {
-    return fromAsync(async ({ bc, numproc }) => {
-      const bloco = await getBloco(id);
-      if (!bloco) return Action.ObterBlocos();
-      const processos = new Set(bloco.processos).add(numproc);
-      await updateBloco({ ...bloco, processos: [...processos] });
-      const blocos = await getBlocos();
+  inserirEFechar(id: Bloco['id']): Action {
+    return fromAsync(async ({}, { DB, bc, numproc }) => {
+      const bloco = await DB.getBloco(id);
+      if (bloco) {
+        const processos = new Set(bloco.processos).add(numproc);
+        await DB.updateBloco({ ...bloco, processos: [...processos] });
+        const blocos = await DB.getBlocos();
+        bc.publish({ type: 'Blocos', blocos });
+        window.close();
+        return actions.blocosObtidos(blocos);
+      }
+      return actions.obterBlocos();
+    });
+  },
+  noop(): Action {
+    return (state) => state;
+  },
+  obterBlocos(): Action {
+    return fromAsync(async ({}, { DB, bc }) => {
+      const blocos = await DB.getBlocos();
       bc.publish({ type: 'Blocos', blocos });
-      window.close();
-      return Action.Blocos(blocos);
+      return actions.blocosObtidos(blocos);
     });
   },
-  NoOp(): Action {
-    return state => state;
-  },
-  ObterBlocos(): Action {
-    return fromAsync(async ({ bc }) => {
-      const blocos = await getBlocos();
-      bc.publish({ type: 'Blocos', blocos });
-      return Action.Blocos(blocos);
-    });
-  },
-  Remover(id: Bloco['id']): Action {
-    return fromAsync(async ({ numproc }) => {
-      const bloco = await getBloco(id);
-      if (!bloco) return Action.ObterBlocos();
-      const processos = new Set(bloco.processos);
-      processos.delete(numproc);
-      await updateBloco({ ...bloco, processos: [...processos] });
-      return Action.ObterBlocos();
+  remover(id: Bloco['id']): Action {
+    return fromAsync(async ({}, { DB, numproc }) => {
+      const bloco = await DB.getBloco(id);
+      if (bloco) {
+        const processos = new Set(bloco.processos);
+        processos.delete(numproc);
+        await DB.updateBloco({ ...bloco, processos: [...processos] });
+      }
+      return actions.obterBlocos();
     });
   },
 };
@@ -107,7 +119,7 @@ export function ProcessoSelecionar(numproc: NumProc) {
   const mainMenu = document.getElementById('main-menu');
   assert(isNotNull(mainMenu));
   document.head.appendChild(
-    (s => {
+    ((s) => {
       s.textContent = css;
       return s;
     })(document.createElement('style')),
@@ -117,39 +129,35 @@ export function ProcessoSelecionar(numproc: NumProc) {
   render(<Main numproc={numproc} />, mainMenu, div);
 }
 
-function mount(init: { (): [Model] | [Model, Action] }): [Model, Handler<Action>] {
-  const [initialState, initialAction] = useMemo(init, []);
-
-  const [state, dispatch] = useReducer((state: Model, action: Action): Model => {
-    const next = action(state, dispatch);
-    return next;
-  }, initialState);
-
-  useEffect(() => {
-    if (initialAction) dispatch(initialAction);
+function Main(props: { numproc: NumProc }) {
+  const extra = useMemo((): Dependencias => {
+    const bc = createBroadcastService(),
+      { numproc } = props;
+    return { DB: Database, bc, numproc };
   }, []);
 
-  return [state, dispatch];
-}
+  const [state, dispatch] = useReducer(
+    (state: Model, action: Action): Model => action(state, dispatch, extra),
+    { status: 'Loading' },
+  );
 
-function Main(props: { numproc: NumProc }) {
-  const [state, dispatch] = mount(() => [
-    { status: 'Loading', bc: createBroadcastService(), numproc: props.numproc },
-    Action.ObterBlocos(),
-  ]);
-  state.bc.subscribe(msg => {
-    switch (msg.type) {
-      case 'Blocos':
-        dispatch(Action.Blocos(msg.blocos));
-        break;
+  useEffect(() => {
+    extra.bc.subscribe((msg) => {
+      switch (msg.type) {
+        case 'Blocos':
+          dispatch(actions.blocosObtidos(msg.blocos));
+          break;
 
-      case 'NoOp':
-        break;
+        case 'NoOp':
+          break;
 
-      default:
-        expectUnreachable(msg);
-    }
-  });
+        default:
+          expectUnreachable(msg);
+      }
+    });
+
+    dispatch(actions.obterBlocos());
+  }, []);
 
   return (
     <div id="gm-blocos">
@@ -172,7 +180,7 @@ function Blocos(props: { blocos: BlocoProcesso[]; dispatch: Handler<Action>; dis
     <>
       <h2>Blocos</h2>
       <div id="gm-blocos-grid">
-        {props.blocos.map(info => (
+        {props.blocos.map((info) => (
           <Bloco key={info.id} {...info} dispatch={props.dispatch} disabled={props.disabled} />
         ))}
       </div>
@@ -184,9 +192,9 @@ function Bloco(props: BlocoProcesso & { dispatch: Handler<Action>; disabled: boo
   const onChange = useCallback(
     (evt: JSX.TargetedEvent<HTMLInputElement>) => {
       if (evt.currentTarget.checked) {
-        props.dispatch(Action.Inserir(props.id));
+        props.dispatch(actions.inserir(props.id));
       } else {
-        props.dispatch(Action.Remover(props.id));
+        props.dispatch(actions.remover(props.id));
       }
     },
     [props.dispatch],
@@ -209,7 +217,7 @@ function Bloco(props: BlocoProcesso & { dispatch: Handler<Action>; disabled: boo
           <input
             type="image"
             src="infra_css/imagens/transportar.gif"
-            onClick={() => props.dispatch(Action.InserirEFechar(props.id))}
+            onClick={() => props.dispatch(actions.inserirEFechar(props.id))}
             disabled={props.disabled}
           />
         </>
