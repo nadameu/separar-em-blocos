@@ -84,7 +84,7 @@ export function refine<T extends Array<Refinement<any, any> | Negate<any>>>(
   ...predicates: T
 ): Refine<T>;
 export function refine(...predicates: Function[]) {
-  return (value: unknown) => predicates.every(p => p(value));
+  return (value: unknown) => predicates.every((p) => p(value));
 }
 export const isObject = /* @__PURE__ */ refine(isOfTypeObject, isNotNull);
 export type Integer = Opaque<number, { readonly Integer: unique symbol }>;
@@ -105,7 +105,7 @@ export const isNonEmptyString = /* @__PURE__*/ refine(
 export function isAnyOf<T extends Predicate<any>[]>(
   ...predicates: T
 ): Predicate<T extends Predicate<infer U>[] ? U : never> {
-  return (value): value is any => predicates.some(p => p(value));
+  return (value): value is any => predicates.some((p) => p(value));
 }
 export const isNullish = /* @__PURE__ */ isAnyOf(isNull, isUndefined);
 export const isNotNullish = /* @__PURE__ */ negate(isNullish);
@@ -119,7 +119,7 @@ export function isArray<T>(predicate: Predicate<T>): Predicate<T[]> {
 
 export function hasKeys<K extends string>(...keys: K[]): Predicate<Record<K, unknown>> {
   return refine(isObject, (obj: object): obj is Record<K, unknown> =>
-    keys.every(key => key in obj),
+    keys.every((key) => key in obj),
   );
 }
 
@@ -138,8 +138,8 @@ export function hasShape<T extends Record<string, Predicate<any>>>(
   return refine(
     hasKeys(...(required as string[])),
     (obj: Record<string, unknown>): obj is any =>
-      required.every(key => predicates[key]!(obj[key as string])) &&
-      optional.every(key => (key in obj ? predicates[key]!(obj[key as string]) : true)),
+      required.every((key) => predicates[key]!(obj[key as string])) &&
+      optional.every((key) => (key in obj ? predicates[key]!(obj[key as string]) : true)),
   );
 }
 

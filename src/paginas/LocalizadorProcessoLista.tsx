@@ -94,13 +94,13 @@ function mount(
   useEffect(() => {
     if (initialCommand)
       go(initialState, initialCommand)
-        .then(value => setState(value))
-        .catch(error => setState({ status: 'error', error }));
+        .then((value) => setState(value))
+        .catch((error) => setState({ status: 'error', error }));
   }, []);
 
   const update = useMemo(() => {
     const bc = createBroadcastService();
-    bc.subscribe(msg => {
+    bc.subscribe((msg) => {
       switch (msg.type) {
         case 'Blocos':
           dispatch(msg);
@@ -127,8 +127,8 @@ function mount(
 
   function handler(action: Action) {
     go(...update(state, action))
-      .then(value => setState(value))
-      .catch(error => setState(state => ({ ...state, error })));
+      .then((value) => setState(value))
+      .catch((error) => setState((state) => ({ ...state, error })));
   }
 }
 
@@ -146,9 +146,9 @@ function createUpdate(
           state,
           async () => {
             const blocos = await getBlocos();
-            if (blocos.some(x => x.nome === action.nome)) return Action.Blocos(blocos);
+            if (blocos.some((x) => x.nome === action.nome)) return Action.Blocos(blocos);
             const bloco: Bloco = {
-              id: (Math.max(-1, ...blocos.map(x => x.id)) + 1) as p.NonNegativeInteger,
+              id: (Math.max(-1, ...blocos.map((x) => x.id)) + 1) as p.NonNegativeInteger,
               nome: action.nome,
               processos: [],
             };
@@ -193,8 +193,8 @@ function createUpdate(
           state,
           async () => {
             const blocos = await getBlocos();
-            const others = blocos.filter(x => x.id !== action.bloco);
-            if (others.some(x => x.nome === action.nome)) return Action.Blocos(blocos);
+            const others = blocos.filter((x) => x.id !== action.bloco);
+            if (others.some((x) => x.nome === action.nome)) return Action.Blocos(blocos);
             const bloco = await getBloco(action.bloco);
             if (!bloco) return Action.Blocos(blocos);
             await updateBloco({ ...bloco, nome: action.nome });
@@ -278,13 +278,13 @@ function Blocos(props: { state: Extract<Model, { status: 'loaded' }>; dispatch: 
     <>
       <h1>Blocos</h1>
       <ul>
-        {props.state.blocos.map(bloco => (
+        {props.state.blocos.map((bloco) => (
           <Bloco key={bloco.id} {...bloco} dispatch={props.dispatch} />
         ))}
       </ul>
       <input
         value={nome}
-        onInput={evt => setNome(evt.currentTarget.value)}
+        onInput={(evt) => setNome(evt.currentTarget.value)}
         onKeyPress={onKeyPress}
       />
       <button onClick={onSubmit}>Criar</button>
@@ -327,7 +327,7 @@ function Bloco(props: Bloco & { dispatch: Handler<Action> }) {
       {editing ? (
         <input
           ref={ref}
-          onInput={evt => setNome(evt.currentTarget.value)}
+          onInput={(evt) => setNome(evt.currentTarget.value)}
           onKeyPress={onKey}
           value={nome}
         />

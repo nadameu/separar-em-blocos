@@ -42,8 +42,8 @@ export async function getBlocos() {
   const blocos = await db.getAll('blocos');
   assert(blocos.every(isBloco), 'Formato do banco de dados desconhecido.');
   return blocos.sort((a, b) => {
-    const [c, d] = [a, b].map(x => x.nome) as [NonEmptyString, NonEmptyString];
-    const [e, f] = [c, d].map(x => x.toLowerCase()) as [NonEmptyString, NonEmptyString];
+    const [c, d] = [a, b].map((x) => x.nome) as [NonEmptyString, NonEmptyString];
+    const [e, f] = [c, d].map((x) => x.toLowerCase()) as [NonEmptyString, NonEmptyString];
     if (e < f) return -1;
     if (e > f) return +1;
     if (c < d) return -1;
