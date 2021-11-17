@@ -4,21 +4,22 @@ import { createBroadcastService } from '../createBroadcastService';
 import * as Database from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
 import { Handler } from '../lib/Handler';
-import { assert, isNotNull } from '../lib/predicates';
+import { assert, isNonEmptyString, isNotNull, NonNegativeInteger } from '../lib/predicates';
+import { BroadcastMessage } from '../types/Action';
 import { Bloco, BlocoProcesso } from '../types/Bloco';
 import { NumProc } from '../types/NumProc';
 
 type BC = ReturnType<typeof createBroadcastService>;
 
 type Dependencias = {
-  DB: Pick<typeof Database, 'getBloco' | 'getBlocos' | 'updateBloco'>;
+  DB: Pick<typeof Database, 'createBloco' | 'getBloco' | 'getBlocos' | 'updateBloco'>;
   bc: BC;
   numproc: NumProc;
 };
 
 type Model =
   | { status: 'Loading' }
-  | { status: 'Success'; blocos: Bloco[]; loading: boolean }
+  | { status: 'Success'; blocos: Bloco[]; inactive: boolean; erro?: string }
   | { status: 'Error'; reason: unknown };
 
 interface Action {
@@ -28,16 +29,21 @@ interface Dispatch {
   (action: Action): void;
 }
 
-function fromAsync(asyncAction: { (state: Model, extra: Dependencias): Promise<Action> }): Action {
+function fromThunk(thunk: {
+  (state: Model, extra: Dependencias): Action | Promise<Action>;
+}): Action {
   return (state, dispatch, extra) => {
-    asyncAction(state, extra).catch(actions.erro).then(dispatch);
+    Promise.resolve()
+      .then(() => thunk(state, extra))
+      .catch(actions.erro)
+      .then(dispatch);
     return actions.carregando()(state, dispatch, extra);
   };
 }
 
 const actions = {
   blocosObtidos(blocos: Bloco[]): Action {
-    return () => ({ status: 'Success', blocos, loading: false });
+    return () => ({ status: 'Success', blocos, inactive: false });
   },
   carregando(): Action {
     return (state) => {
@@ -47,50 +53,84 @@ const actions = {
           return { status: 'Loading' };
 
         case 'Success':
-          return { ...state, loading: true };
+          return { ...state, inactive: true, erro: undefined };
       }
       return expectUnreachable(state);
     };
   },
+  criarBloco(nome: Bloco['nome']): Action {
+    return fromThunk(async ({}, { DB }) => {
+      const blocos = await DB.getBlocos();
+      if (blocos.some((x) => x.nome === nome))
+        return actions.erroCapturado(`Já existe um bloco com o nome ${JSON.stringify(nome)}.`);
+      await DB.createBloco({
+        id: (Math.max(-1, ...blocos.map((x) => x.id)) + 1) as NonNegativeInteger,
+        nome,
+        processos: [],
+      });
+      return actions.obterBlocos();
+    });
+  },
   erro(reason: unknown): Action {
     return () => ({ status: 'Error', reason });
   },
-  inserir(id: Bloco['id']): Action {
-    return fromAsync(async ({}, { DB, numproc }) => {
-      const bloco = await DB.getBloco(id);
-      if (bloco) {
-        const processos = new Set(bloco.processos).add(numproc);
-        await DB.updateBloco({ ...bloco, processos: [...processos] });
+  erroCapturado(reason: string): Action {
+    return (state) => {
+      switch (state.status) {
+        case 'Loading':
+          return { status: 'Error', reason };
+        case 'Error':
+          return state;
+        case 'Success':
+          return { ...state, inactive: false, erro: reason };
       }
+      return expectUnreachable(state);
+    };
+  },
+  inserir(id: Bloco['id']): Action {
+    return fromThunk(async ({}, { DB, numproc }) => {
+      const bloco = await DB.getBloco(id);
+      if (!bloco) throw new Error(`Bloco não encontrado: ${id}.`);
+      const processos = new Set(bloco.processos).add(numproc);
+      await DB.updateBloco({ ...bloco, processos: [...processos] });
       return actions.obterBlocos();
     });
   },
   inserirEFechar(id: Bloco['id']): Action {
-    return fromAsync(async ({}, { DB, bc, numproc }) => {
+    return fromThunk(async (state, { DB, bc, numproc }) => {
       const bloco = await DB.getBloco(id);
-      if (bloco) {
-        const processos = new Set(bloco.processos).add(numproc);
-        await DB.updateBloco({ ...bloco, processos: [...processos] });
-        const blocos = await DB.getBlocos();
-        bc.publish({ type: 'Blocos', blocos });
-        window.close();
-        return actions.blocosObtidos(blocos);
+      if (!bloco) throw new Error(`Bloco não encontrado: ${id}.`);
+      const processos = new Set(bloco.processos).add(numproc);
+      await DB.updateBloco({ ...bloco, processos: [...processos] });
+      const blocos = await DB.getBlocos();
+      bc.publish({ type: 'Blocos', blocos });
+      window.close();
+      return actions.blocosObtidos(blocos);
+    });
+  },
+  mensagemRecebida(msg: BroadcastMessage): Action {
+    return fromThunk(() => {
+      switch (msg.type) {
+        case 'Blocos':
+          return actions.blocosObtidos(msg.blocos);
+        case 'NoOp':
+          return actions.noop();
       }
-      return actions.obterBlocos();
+      expectUnreachable(msg);
     });
   },
   noop(): Action {
     return (state) => state;
   },
   obterBlocos(): Action {
-    return fromAsync(async ({}, { DB, bc }) => {
+    return fromThunk(async ({}, { DB, bc }) => {
       const blocos = await DB.getBlocos();
       bc.publish({ type: 'Blocos', blocos });
       return actions.blocosObtidos(blocos);
     });
   },
   remover(id: Bloco['id']): Action {
-    return fromAsync(async ({}, { DB, numproc }) => {
+    return fromThunk(async ({}, { DB, numproc }) => {
       const bloco = await DB.getBloco(id);
       if (bloco) {
         const processos = new Set(bloco.processos);
@@ -103,37 +143,55 @@ const actions = {
 };
 
 const css = /*css*/ `
-div#gm-blocos {
-  background: black;
+.menu-dark div#gm-blocos {
+  /* background: black; */
   color:white;
 }
-div#gm-blocos-grid {
+.menu-light div#gm-blocos {
+  color: rgba(0,0,0,.8);
+}
+#gm-blocos h4 {
+  margin-left: 7px;
+}
+#gm-blocos ul {
+  list-style-type: none;
+  margin: 0;
+  padding: 0 7px;
+}
+#gm-blocos li {
   display: grid;
-  grid-template: "checkbox descricao transportar ." auto / auto auto auto 0;
-  grid-gap: 4px;
-  align-items: start;
+  grid-template-columns: auto 1fr auto;
+  grid-gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+  padding: 4px;
+}
+.menu-dark #gm-blocos li:hover {
+  background: rgba(255,255,255,.2);
+}
+.menu-light #gm-blocos li:hover {
+  background: rgba(0,0,0,.1);
+}
+#gm-blocos label {
+  margin: 0;
 }
 `;
 
 export function ProcessoSelecionar(numproc: NumProc) {
   const mainMenu = document.getElementById('main-menu');
   assert(isNotNull(mainMenu));
-  document.head.appendChild(
-    ((s) => {
-      s.textContent = css;
-      return s;
-    })(document.createElement('style')),
-  );
-  const div = document.createElement('div');
-  mainMenu.insertAdjacentElement('beforebegin', div);
-  render(<Main numproc={numproc} />, mainMenu, div);
+  const style = document.head.appendChild(document.createElement('style'));
+  style.textContent = css;
+  const div = mainMenu.insertAdjacentElement('beforebegin', document.createElement('div'))!;
+  render(<Main numproc={numproc} />, div);
 }
 
 function Main(props: { numproc: NumProc }) {
   const extra = useMemo((): Dependencias => {
-    const bc = createBroadcastService(),
+    const DB = Database,
+      bc = createBroadcastService(),
       { numproc } = props;
-    return { DB: Database, bc, numproc };
+    return { DB, bc, numproc };
   }, []);
 
   const [state, dispatch] = useReducer(
@@ -142,50 +200,82 @@ function Main(props: { numproc: NumProc }) {
   );
 
   useEffect(() => {
-    extra.bc.subscribe((msg) => {
-      switch (msg.type) {
-        case 'Blocos':
-          dispatch(actions.blocosObtidos(msg.blocos));
-          break;
-
-        case 'NoOp':
-          break;
-
-        default:
-          expectUnreachable(msg);
-      }
-    });
-
+    extra.bc.subscribe((msg) => dispatch(actions.mensagemRecebida(msg)));
     dispatch(actions.obterBlocos());
   }, []);
 
-  return (
-    <div id="gm-blocos">
-      {state.status === 'Success' ? (
+  switch (state.status) {
+    case 'Loading':
+      return <div id="gm-blocos">Carregando...</div>;
+    case 'Error':
+      return <ShowError dispatch={dispatch} reason={state.reason} />;
+    case 'Success':
+      return (
         <Blocos
           blocos={state.blocos.map(({ processos, ...rest }) => ({
             ...rest,
             inserido: processos.includes(props.numproc),
           }))}
           dispatch={dispatch}
-          disabled={state.loading}
+          disabled={state.inactive}
+          erro={state.erro}
         />
-      ) : null}
+      );
+  }
+  return expectUnreachable(state);
+}
+
+function ShowError({ dispatch, reason }: { dispatch: Dispatch; reason: unknown }) {
+  const message =
+    typeof reason === 'object' && reason !== null && reason instanceof Error
+      ? reason.message
+        ? `Ocorreu um erro: ${reason.message}`
+        : 'Ocorreu um erro desconhecido.'
+      : `Ocorreu um erro: ${String(reason)}`;
+
+  return (
+    <div id="gm-blocos">
+      <span style="color:red; font-weight: bold;">{message}</span>
+      <br />
+      <br />
+      <button onClick={() => dispatch(actions.obterBlocos())}>Recarregar</button>
     </div>
   );
 }
 
-function Blocos(props: { blocos: BlocoProcesso[]; dispatch: Handler<Action>; disabled: boolean }) {
+function Blocos(props: {
+  blocos: BlocoProcesso[];
+  dispatch: Handler<Action>;
+  disabled: boolean;
+  erro?: string;
+}) {
+  let aviso: h.JSX.Element | null = null;
+  if (props.erro) {
+    aviso = <span style="color:red; font-weight: bold;">{props.erro}</span>;
+  }
   return (
-    <>
-      <h2>Blocos</h2>
-      <div id="gm-blocos-grid">
+    <div id="gm-blocos">
+      <h4>Blocos</h4>
+      <ul>
         {props.blocos.map((info) => (
           <Bloco key={info.id} {...info} dispatch={props.dispatch} disabled={props.disabled} />
         ))}
-      </div>
-    </>
+        <button type="button" id="gm-novo-bloco" onClick={onNovoClicked} disabled={props.disabled}>
+          Novo
+        </button>
+      </ul>
+      {aviso}
+    </div>
   );
+
+  function onNovoClicked(evt: Event) {
+    evt.preventDefault();
+    const nome = prompt('Nome do novo bloco:');
+    if (nome === null) return;
+    if (isNonEmptyString(nome)) {
+      props.dispatch(actions.criarBloco(nome));
+    }
+  }
 }
 
 function Bloco(props: BlocoProcesso & { dispatch: Handler<Action>; disabled: boolean }) {
@@ -200,7 +290,7 @@ function Bloco(props: BlocoProcesso & { dispatch: Handler<Action>; disabled: boo
     [props.dispatch],
   );
   return (
-    <>
+    <li>
       <input
         id={`gm-bloco-${props.id}`}
         type="checkbox"
@@ -222,7 +312,6 @@ function Bloco(props: BlocoProcesso & { dispatch: Handler<Action>; disabled: boo
           />
         </>
       )}
-      <br />
-    </>
+    </li>
   );
 }
