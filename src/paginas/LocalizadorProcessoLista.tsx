@@ -1,9 +1,8 @@
-import { Fragment, h, render } from 'preact';
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'preact/hooks';
+import { createRef, Fragment, h, render } from 'preact';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'preact/hooks';
 import { createBroadcastService } from '../createBroadcastService';
 import * as Database from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
-import { Handler } from '../lib/Handler';
 import * as p from '../lib/predicates';
 import { BroadcastMessage } from '../types/Action';
 import { Bloco } from '../types/Bloco';
@@ -17,9 +16,14 @@ type MapaProcessos = Map<
   }
 >;
 
+interface InfoBloco extends Bloco {
+  nestaPagina: number;
+  total: number;
+}
+
 type Model =
   | { status: 'init' }
-  | { status: 'loaded'; blocos: Bloco[]; aviso?: string }
+  | { status: 'loaded'; blocos: InfoBloco[]; aviso?: string }
   | { status: 'error'; error: unknown };
 
 interface Action {
@@ -39,9 +43,10 @@ type Dependencias = {
   mapa: MapaProcessos;
 };
 
-function fromAsync(f: (state: Model, extra: Dependencias) => Promise<Action>): Action {
+function fromThunk(f: (state: Model, extra: Dependencias) => Action | Promise<Action>): Action {
   return (state, dispatch, extra) => {
-    f(state, extra)
+    Promise.resolve()
+      .then(() => f(state, extra))
       .catch(
         (error): Action =>
           () => ({ status: 'error', error }),
@@ -52,73 +57,100 @@ function fromAsync(f: (state: Model, extra: Dependencias) => Promise<Action>): A
 }
 
 const actions = {
+  adicionarInformacao: (blocos: Bloco[]): Action =>
+    fromThunk((_, { mapa }) => {
+      const info = blocos.map(
+        (bloco): InfoBloco => ({
+          ...bloco,
+          nestaPagina: bloco.processos.filter((numproc) => mapa.has(numproc)).length,
+          total: bloco.processos.length,
+        }),
+      );
+      return actions.blocosObtidos(info);
+    }),
   blocosObtidos:
-    (blocos: Bloco[]): Action =>
+    (blocos: InfoBloco[]): Action =>
     (state) => {
       if (state.status === 'error') return state;
       return { status: 'loaded', blocos };
     },
   criarBloco: (nome: Bloco['nome']): Action =>
-    fromAsync(async (state, { DB }) => {
+    fromThunk(async (state, { DB }) => {
       const blocos = await DB.getBlocos();
-      if (blocos.every((x) => x.nome !== nome)) {
-        const bloco: Bloco = {
-          id: (Math.max(-1, ...blocos.map((x) => x.id)) + 1) as p.NonNegativeInteger,
-          nome,
-          processos: [],
-        };
-        await DB.createBloco(bloco);
-      }
+      if (blocos.some((x) => x.nome === nome))
+        return actions.erroCapturado(`Já existe um bloco com o nome ${JSON.stringify(nome)}.`);
+      const bloco: Bloco = {
+        id: (Math.max(-1, ...blocos.map((x) => x.id)) + 1) as p.NonNegativeInteger,
+        nome,
+        processos: [],
+      };
+      await DB.createBloco(bloco);
       return actions.obterBlocos();
     }),
+  erroCapturado:
+    (aviso: string): Action =>
+    (state) => {
+      switch (state.status) {
+        case 'init':
+          return { status: 'error', error: aviso };
+        case 'error':
+          return state;
+        case 'loaded':
+          return { ...state, aviso };
+      }
+      return expectUnreachable(state);
+    },
   excluirBD: (): Action =>
-    fromAsync(async ({}, { DB }) => {
+    fromThunk(async ({}, { DB }) => {
       await DB.deleteBlocos();
       return actions.obterBlocos();
     }),
   excluirBloco: (bloco: p.NonNegativeInteger): Action =>
-    fromAsync(async ({}, { DB }) => {
+    fromThunk(async ({}, { DB }) => {
       await DB.deleteBloco(bloco);
       return actions.obterBlocos();
     }),
-  mensagemRecebida:
-    (msg: BroadcastMessage): Action =>
-    (state, dispatch) => {
+  mensagemRecebida: (msg: BroadcastMessage): Action =>
+    fromThunk(() => {
       switch (msg.type) {
         case 'Blocos':
-          dispatch(actions.blocosObtidos(msg.blocos));
-          break;
+          return actions.adicionarInformacao(msg.blocos);
         case 'NoOp':
-          break;
+          return actions.noop();
         default:
-          expectUnreachable(msg);
-          break;
+          return expectUnreachable(msg);
       }
-      return state;
-    },
+    }),
   obterBlocos: (): Action =>
-    fromAsync(async ({}, { DB, bc }) => {
+    fromThunk(async ({}, { DB, bc }) => {
       const blocos = await DB.getBlocos();
       bc.publish({ type: 'Blocos', blocos });
-      return actions.blocosObtidos(blocos);
+      return actions.adicionarInformacao(blocos);
     }),
   noop: (): Action => (state) => state,
+  removerProcessosAusentes: (id: Bloco['id']): Action =>
+    fromThunk(async (state, { DB, mapa }) => {
+      const bloco = await DB.getBloco(id);
+      if (!bloco) throw new Error(`Bloco não encontrado: ${id}.`);
+      const processos = bloco.processos.filter((x) => mapa.has(x));
+      await DB.updateBloco({ ...bloco, processos });
+      return actions.obterBlocos();
+    }),
   renomearBloco: (id: Bloco['id'], nome: Bloco['nome']): Action =>
-    fromAsync(async ({}, { DB }) => {
+    fromThunk(async ({}, { DB }) => {
       const blocos = await DB.getBlocos();
       const bloco = blocos.find((x) => x.id === id);
-      if (bloco) {
-        const others = blocos.filter((x) => x.id !== id);
-        if (others.every((x) => x.nome !== nome)) {
-          await DB.updateBloco({ ...bloco, nome });
-        }
-      }
+      if (!bloco) throw new Error(`Bloco não encontrado: ${id}.`);
+      const others = blocos.filter((x) => x.id !== id);
+      if (others.some((x) => x.nome === nome))
+        return actions.erroCapturado(`Já existe um bloco com o nome ${JSON.stringify(nome)}.`);
+      await DB.updateBloco({ ...bloco, nome });
       return actions.obterBlocos();
     }),
   selecionarProcessos: (id: Bloco['id']): Action =>
-    fromAsync(async ({}, { DB, mapa }) => {
+    fromThunk(async ({}, { DB, mapa }) => {
       const bloco = await DB.getBloco(id);
-      if (!bloco) return actions.obterBlocos();
+      if (!bloco) throw new Error(`Bloco não encontrado: ${id}.`);
       for (const [numproc, { checkbox }] of mapa) {
         if (bloco.processos.includes(numproc)) {
           if (!checkbox.checked) checkbox.click();
@@ -148,9 +180,8 @@ export function LocalizadorProcessoLista() {
 
   const barra = document.getElementById('divInfraBarraLocalizacao');
   p.assert(p.isNotNull(barra), 'Não foi possível inserir os blocos na página.');
-  const div = document.createElement('div');
-  barra.insertAdjacentElement('afterend', div);
-  render(<Main mapa={mapa} />, barra.parentElement!, div);
+  const div = barra.insertAdjacentElement('afterend', document.createElement('div'))!;
+  render(<Main mapa={mapa} />, div);
 }
 
 function Main(props: { mapa: MapaProcessos }) {
@@ -170,29 +201,40 @@ function Main(props: { mapa: MapaProcessos }) {
     extra.bc.subscribe((msg) => dispatch(actions.mensagemRecebida(msg)));
 
     dispatch(actions.obterBlocos());
-  });
+  }, []);
 
-  return (
-    <div>
-      {state.status === 'error' ? (
-        <ShowError reason={String(state.error)} dispatch={dispatch} />
-      ) : state.status === 'loaded' ? (
-        <Blocos state={state} dispatch={dispatch} />
-      ) : (
-        <Loading />
-      )}
-    </div>
-  );
+  useEffect(() => {
+    console.log(state);
+  }, [state]);
+
+  switch (state.status) {
+    case 'error':
+      return <ShowError reason={state.error} dispatch={dispatch} />;
+
+    case 'loaded':
+      return <Blocos state={state} dispatch={dispatch} />;
+
+    case 'init':
+      return <Loading />;
+  }
+  return expectUnreachable(state);
 }
 
 function Loading() {
   return <>Carregando...</>;
 }
 
-function ShowError({ dispatch, reason }: { reason: string; dispatch: Dispatch }) {
+function ShowError({ dispatch, reason }: { reason: unknown; dispatch: Dispatch }) {
+  const message =
+    reason instanceof Error
+      ? reason.message
+        ? `Ocorreu um erro: ${reason.message}`
+        : 'Ocorreu um erro desconhecido.'
+      : `Ocorreu um erro: ${String(reason)}`;
+
   return (
     <>
-      <span style="color:red; font-weight: bold;">{reason}</span>
+      <span style="color:red; font-weight: bold;">{message}</span>
       <br />
       <br />
       <button onClick={() => dispatch(actions.obterBlocos())}>Tentar carregar dados salvos</button>
@@ -204,17 +246,25 @@ function ShowError({ dispatch, reason }: { reason: string; dispatch: Dispatch })
 function Blocos(props: { state: Extract<Model, { status: 'loaded' }>; dispatch: Dispatch }) {
   const [nome, setNome] = useState('');
 
-  const onSubmit = useCallback(() => {
-    if (p.isNonEmptyString(nome)) props.dispatch(actions.criarBloco(nome));
-    setNome('');
-  }, [nome]);
-
-  const onKeyPress = useCallback(
-    (evt: KeyboardEvent) => {
-      if (evt.key === 'Enter') onSubmit();
+  const onSubmit = useCallback(
+    (e: Event) => {
+      e.preventDefault();
+      if (p.isNonEmptyString(nome)) props.dispatch(actions.criarBloco(nome));
+      else props.dispatch(actions.erroCapturado('Nome do bloco não pode estar em branco.'));
+      setNome('');
     },
-    [onSubmit],
+    [nome],
   );
+
+  let aviso: h.JSX.Element | null = null;
+  if (props.state.aviso) {
+    aviso = (
+      <>
+        <span style="color:red">{props.state.aviso}</span>
+        <button onClick={() => props.dispatch(actions.obterBlocos())}>Recarregar dados</button>
+      </>
+    );
+  }
 
   return (
     <>
@@ -224,86 +274,90 @@ function Blocos(props: { state: Extract<Model, { status: 'loaded' }>; dispatch: 
           <Bloco key={bloco.id} {...bloco} dispatch={props.dispatch} />
         ))}
       </ul>
-      <input
-        value={nome}
-        onInput={(evt) => setNome(evt.currentTarget.value)}
-        onKeyPress={onKeyPress}
-      />
-      <button onClick={onSubmit}>Criar</button>
+      <form onSubmit={onSubmit}>
+        <input value={nome} onInput={(evt) => setNome(evt.currentTarget.value)} />{' '}
+        <button>Criar</button>
+      </form>
       <br />
-      {props.state.aviso ? (
-        <>
-          <span style="color:red">{props.state.aviso}</span>
-          <button onClick={() => props.dispatch(actions.obterBlocos())}>Recarregar dados</button>
-        </>
-      ) : null}
+      {aviso}
     </>
   );
 }
 
-function Bloco(props: Bloco & { dispatch: Dispatch }) {
+function Bloco(props: InfoBloco & { dispatch: Dispatch }) {
   const [editing, setEditing] = useState(false);
-  const [nome, setNome] = useState(props.nome as string);
-  const ref = useRef<HTMLInputElement>(null);
+  const input = createRef<HTMLInputElement>();
   useEffect(() => {
-    if (ref.current) {
-      ref.current.select();
-      ref.current.focus();
+    if (editing && input.current) {
+      input.current.select();
+      input.current.focus();
     }
   }, [editing]);
-  const onKey = useCallback(
-    (evt: KeyboardEvent) => {
-      if (evt.key === 'Enter') {
-        setEditing(false);
-        if (p.isNonEmptyString(nome)) {
-          props.dispatch(actions.renomearBloco(props.id, nome));
-        }
-      } else if (evt.key === 'Escape') {
-        setEditing(false);
-      }
-    },
-    [props.id, nome, props.nome],
+
+  let displayNome: h.JSX.Element | string = props.nome;
+
+  let botaoRenomear: h.JSX.Element | null = <button onClick={onRenomearClicked}>Renomear</button>;
+
+  let removerAusentes: h.JSX.Element | null = (
+    <button onClick={() => props.dispatch(actions.removerProcessosAusentes(props.id))}>
+      Remover processos ausentes
+    </button>
   );
+
+  if (editing) {
+    displayNome = <input ref={input} onKeyUp={onKeyUp} value={props.nome} />;
+    botaoRenomear = null;
+  } else if (props.nestaPagina > 0) {
+    displayNome = <button onClick={onSelecionarProcessosClicked}>{props.nome}</button>;
+  }
+  if (props.total <= props.nestaPagina) {
+    removerAusentes = null;
+  }
+
   return (
     <li>
-      {editing ? (
-        <input
-          ref={ref}
-          onInput={(evt) => setNome(evt.currentTarget.value)}
-          onKeyPress={onKey}
-          value={nome}
-        />
-      ) : props.processos.length === 0 ? (
-        props.nome
-      ) : (
-        <button onClick={() => props.dispatch(actions.selecionarProcessos(props.id))}>
-          {props.nome}
-        </button>
-      )}{' '}
-      ({props.processos.length} processo{props.processos.length > 1 ? 's' : ''})
-      {editing ? null : (
-        <button
-          onClick={() => {
-            setNome(props.nome);
-            setEditing(true);
-          }}
-        >
-          Renomear
-        </button>
-      )}
-      <button
-        onClick={() => {
-          let confirmed = true;
-          const len = props.processos.length;
-          if (len > 0)
-            confirmed = window.confirm(
-              `Este bloco possui ${len} processo${len > 1 ? 's' : ''}. Deseja excluí-lo?`,
-            );
-          if (confirmed) props.dispatch(actions.excluirBloco(props.id));
-        }}
-      >
-        Excluir
-      </button>
+      {displayNome} ({createAbbr(props.nestaPagina, props.total)}) {botaoRenomear}{' '}
+      <button onClick={onExcluirClicked}>Excluir</button> {removerAusentes}
     </li>
   );
+
+  function createAbbr(nestaPagina: number, total: number): h.JSX.Element | string {
+    if (total === 0) return '0 processo';
+    if (nestaPagina === total) return `${total} processo${total > 1 ? 's' : ''}`;
+    const textoTotal = `${total} processo${total > 1 ? 's' : ''} no bloco`;
+    const textoPagina = `${nestaPagina === 0 ? 'nenhum' : nestaPagina} nesta página`;
+    const textoResumido = `${nestaPagina}/${total} processo${total > 1 ? 's' : ''}`;
+    return <abbr title={`${textoTotal}, ${textoPagina}.`}>{textoResumido}</abbr>;
+  }
+
+  function onKeyUp(evt: h.JSX.TargetedEvent<HTMLInputElement, KeyboardEvent>) {
+    console.log('Key', evt.key);
+    if (evt.key === 'Enter') {
+      const nome = evt.currentTarget.value;
+      setEditing(false);
+      if (p.isNonEmptyString(nome)) {
+        props.dispatch(actions.renomearBloco(props.id, nome));
+      } else {
+        props.dispatch(actions.erroCapturado('Nome do bloco não pode estar em branco.'));
+      }
+    } else if (evt.key === 'Escape') {
+      setEditing(() => false);
+    }
+  }
+
+  function onRenomearClicked() {
+    setEditing(true);
+  }
+  function onExcluirClicked() {
+    let confirmed = true;
+    const len = props.total;
+    if (len > 0)
+      confirmed = window.confirm(
+        `Este bloco possui ${len} processo${len > 1 ? 's' : ''}. Deseja excluí-lo?`,
+      );
+    if (confirmed) props.dispatch(actions.excluirBloco(props.id));
+  }
+  function onSelecionarProcessosClicked() {
+    props.dispatch(actions.selecionarProcessos(props.id));
+  }
 }
