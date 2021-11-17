@@ -81,6 +81,21 @@ const actions = {
       await DB.deleteBloco(bloco);
       return actions.obterBlocos();
     }),
+  mensagemRecebida:
+    (msg: BroadcastMessage): Action =>
+    (state, dispatch) => {
+      switch (msg.type) {
+        case 'Blocos':
+          dispatch(actions.blocosObtidos(msg.blocos));
+          break;
+        case 'NoOp':
+          break;
+        default:
+          expectUnreachable(msg);
+          break;
+      }
+      return state;
+    },
   obterBlocos: (): Action =>
     fromAsync(async ({}, { DB, bc }) => {
       const blocos = await DB.getBlocos();
@@ -152,17 +167,7 @@ function Main(props: { mapa: MapaProcessos }) {
   );
 
   useEffect(() => {
-    extra.bc.subscribe((msg) => {
-      switch (msg.type) {
-        case 'Blocos':
-          dispatch(actions.blocosObtidos(msg.blocos));
-          break;
-        case 'NoOp':
-          break;
-        default:
-          expectUnreachable(msg);
-      }
-    });
+    extra.bc.subscribe((msg) => dispatch(actions.mensagemRecebida(msg)));
 
     dispatch(actions.obterBlocos());
   });
