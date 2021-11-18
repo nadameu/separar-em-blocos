@@ -148,18 +148,12 @@ div#gm-blocos {
   padding: 4px;
   border-radius: 4px;
 }
-.menu-dark div#gm-blocos {
-  --accent: #41285e;
-  --bg: #494251;
-  --shadow: #262c31;
-  --muted-accent: #35224a;
-  --text: #fff;
-}
+.menu-dark div#gm-blocos,
 .menu-light div#gm-blocos {
   --accent: #41285e;
   --bg: #494251;
   --shadow: #262c31;
-  --muted-accent: #35224a;
+  --muted-accent: #453557;
   --text: #fff;
 }
 div#gm-blocos {
