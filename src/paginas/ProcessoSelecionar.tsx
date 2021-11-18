@@ -143,37 +143,90 @@ const actions = {
 };
 
 const css = /*css*/ `
+div#gm-blocos {
+  margin: 2px 3px 4px;
+  padding: 4px;
+  border-radius: 4px;
+}
 .menu-dark div#gm-blocos {
-  /* background: black; */
-  color:white;
+  --accent: #41285e;
+  --bg: #494251;
+  --shadow: #262c31;
+  --muted-accent: #35224a;
+  --text: #fff;
 }
 .menu-light div#gm-blocos {
-  color: rgba(0,0,0,.8);
+  --accent: #41285e;
+  --bg: #494251;
+  --shadow: #262c31;
+  --muted-accent: #35224a;
+  --text: #fff;
+}
+div#gm-blocos {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 3px 3px var(--shadow);
 }
 #gm-blocos h4 {
-  margin-left: 7px;
+  margin: 3px 0;
+  font-size: 1.25rem;
+  font-weight: 300;
 }
 #gm-blocos ul {
   list-style-type: none;
-  margin: 0;
-  padding: 0 7px;
+  margin: 3px 0 7px;
+  padding: 0;
 }
 #gm-blocos li {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
-  grid-gap: 8px;
+  grid-gap: 5px;
   align-items: center;
   margin: 4px 0;
-  padding: 4px;
+  padding: 5px;
+  border-radius: 2px;
 }
-.menu-dark #gm-blocos li:hover {
-  background: rgba(255,255,255,.2);
+#gm-blocos li::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  width: 100%;
+  height: 100%;
+  border-bottom: 1px solid #888;
+  pointer-events: none;
 }
-.menu-light #gm-blocos li:hover {
-  background: rgba(0,0,0,.1);
+#gm-blocos li:last-of-type::before {
+  content: none;
+}
+#gm-blocos li:hover {
+  background: var(--accent);
 }
 #gm-blocos label {
   margin: 0;
+}
+#gm-blocos button {
+  display: block;
+  margin: 0 auto 7px;
+  padding: 2px 20px;
+  font-size: 1.09rem;
+  border: none;
+  border-radius: 3px;
+  box-shadow: 0 2px 4px var(--shadow);
+  background: var(--muted-accent);
+  color: var(--text);
+}
+#gm-blocos button:hover {
+  transition: background-color 0.1s ease-in;
+  background: var(--accent);
+}
+#gm-blocos .error {
+  margin: 10px 5%;
+  padding: 4px 5%;
+  border-radius: 4px;
+  font-weight: 500;
+  background: white;
+  color: red;
 }
 `;
 
@@ -183,6 +236,7 @@ export function ProcessoSelecionar(numproc: NumProc) {
   const style = document.head.appendChild(document.createElement('style'));
   style.textContent = css;
   const div = mainMenu.insertAdjacentElement('beforebegin', document.createElement('div'))!;
+  div.id = 'gm-blocos';
   render(<Main numproc={numproc} />, div);
 }
 
@@ -206,7 +260,7 @@ function Main(props: { numproc: NumProc }) {
 
   switch (state.status) {
     case 'Loading':
-      return <div id="gm-blocos">Carregando...</div>;
+      return <>Carregando...</>;
     case 'Error':
       return <ShowError dispatch={dispatch} reason={state.reason} />;
     case 'Success':
@@ -234,12 +288,13 @@ function ShowError({ dispatch, reason }: { dispatch: Dispatch; reason: unknown }
       : `Ocorreu um erro: ${String(reason)}`;
 
   return (
-    <div id="gm-blocos">
-      <span style="color:red; font-weight: bold;">{message}</span>
-      <br />
-      <br />
-      <button onClick={() => dispatch(actions.obterBlocos())}>Recarregar</button>
-    </div>
+    <>
+      <h4>Blocos</h4>
+      <div class="error">{message}</div>
+      <button type="button" onClick={() => dispatch(actions.obterBlocos())}>
+        Recarregar
+      </button>
+    </>
   );
 }
 
@@ -251,21 +306,21 @@ function Blocos(props: {
 }) {
   let aviso: h.JSX.Element | null = null;
   if (props.erro) {
-    aviso = <span style="color:red; font-weight: bold;">{props.erro}</span>;
+    aviso = <div class="error">{props.erro}</div>;
   }
   return (
-    <div id="gm-blocos">
+    <>
       <h4>Blocos</h4>
       <ul>
         {props.blocos.map((info) => (
           <Bloco key={info.id} {...info} dispatch={props.dispatch} disabled={props.disabled} />
         ))}
-        <button type="button" id="gm-novo-bloco" onClick={onNovoClicked} disabled={props.disabled}>
-          Novo
-        </button>
       </ul>
+      <button type="button" id="gm-novo-bloco" onClick={onNovoClicked} disabled={props.disabled}>
+        Novo
+      </button>
       {aviso}
-    </div>
+    </>
   );
 
   function onNovoClicked(evt: Event) {
