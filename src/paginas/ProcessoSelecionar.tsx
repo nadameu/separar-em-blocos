@@ -143,11 +143,6 @@ const actions = {
 };
 
 const css = /*css*/ `
-div#gm-blocos {
-  margin: 2px 3px 4px;
-  padding: 4px;
-  border-radius: 4px;
-}
 .menu-dark div#gm-blocos,
 .menu-light div#gm-blocos {
   --accent: #41285e;
@@ -157,6 +152,9 @@ div#gm-blocos {
   --text: #fff;
 }
 div#gm-blocos {
+  margin: 2px 3px 4px;
+  padding: 4px;
+  border-radius: 4px;
   background: var(--bg);
   color: var(--text);
   box-shadow: 0 3px 3px var(--shadow);
@@ -198,12 +196,13 @@ div#gm-blocos {
 }
 #gm-blocos label {
   margin: 0;
+  font-size: 0.92rem;
 }
 #gm-blocos button {
   display: block;
   margin: 0 auto 7px;
   padding: 2px 20px;
-  font-size: 1.09rem;
+  font-size: 0.86rem;
   border: none;
   border-radius: 3px;
   box-shadow: 0 2px 4px var(--shadow);
