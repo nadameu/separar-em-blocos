@@ -8,6 +8,7 @@ import { assert, isNonEmptyString, isNotNull, NonNegativeInteger } from '../lib/
 import { BroadcastMessage } from '../types/Action';
 import { Bloco, BlocoProcesso } from '../types/Bloco';
 import { NumProc } from '../types/NumProc';
+import css from './ProcessoSelecionar.css';
 
 type BC = ReturnType<typeof createBroadcastService>;
 
@@ -141,87 +142,6 @@ const actions = {
     });
   },
 };
-
-const css = /*css*/ `
-.menu-dark div#gm-blocos,
-.menu-light div#gm-blocos {
-  --accent: #41285e;
-  --bg: #494251;
-  --shadow: #262c31;
-  --muted-accent: #453557;
-  --text: #fff;
-}
-div#gm-blocos {
-  margin: 2px 3px 4px;
-  padding: 4px;
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--text);
-  box-shadow: 0 3px 3px var(--shadow);
-}
-#gm-blocos h4 {
-  margin: 3px 0;
-  font-size: 1.25rem;
-  font-weight: 300;
-}
-#gm-blocos ul {
-  list-style-type: none;
-  margin: 3px 0 7px;
-  padding: 0;
-}
-#gm-blocos li {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-gap: 5px;
-  align-items: center;
-  margin: 4px 0;
-  padding: 5px;
-  border-radius: 2px;
-}
-#gm-blocos li::before {
-  content: "";
-  position: absolute;
-  top: 2px;
-  width: 100%;
-  height: 100%;
-  border-bottom: 1px solid #888;
-  pointer-events: none;
-}
-#gm-blocos li:last-of-type::before {
-  content: none;
-}
-#gm-blocos li:hover {
-  background: var(--accent);
-}
-#gm-blocos label {
-  margin: 0;
-  font-size: 0.92rem;
-}
-#gm-blocos button {
-  display: block;
-  margin: 0 auto 7px;
-  padding: 2px 20px;
-  font-size: 0.86rem;
-  border: none;
-  border-radius: 3px;
-  box-shadow: 0 2px 4px var(--shadow);
-  background: var(--muted-accent);
-  color: var(--text);
-}
-#gm-blocos button:hover {
-  transition: background-color 0.1s ease-in;
-  background: var(--accent);
-}
-#gm-blocos .error {
-  margin: 10px 5%;
-  padding: 4px 5%;
-  border-radius: 4px;
-  font-weight: 500;
-  background: white;
-  color: red;
-}
-`;
 
 export function ProcessoSelecionar(numproc: NumProc) {
   const mainMenu = document.getElementById('main-menu');

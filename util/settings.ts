@@ -20,4 +20,5 @@ export const settings: BuildOptions = {
   bundle: true,
   treeShaking: true,
   outfile: `./dist/${filename}`,
+  loader: { '.css': 'text' },
 };
