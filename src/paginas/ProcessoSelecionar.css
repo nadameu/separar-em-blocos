@@ -2,6 +2,8 @@
 .menu-light #gm-blocos {
   --accent: #41285e;
   --bg: #494251;
+  --disabled: #5d5863;
+  --disabled-text: #ccc;
   --shadow: #262c31;
   --muted-accent: #453557;
   --text: #fff;
@@ -53,6 +55,23 @@
   margin: 0;
   font-size: 0.92rem;
 }
+#gm-blocos .placeholder span {
+  height: 1.38rem;
+  animation: pulse 1s ease-in-out infinite alternate;
+  border-radius: 4px;
+}
+#gm-blocos .placeholder span:first-of-type,
+#gm-blocos .placeholder span:last-of-type {
+  width: 1.38rem;
+}
+@keyframes pulse {
+  from {
+    background-color: var(--disabled);
+  }
+  to {
+    background-color: var(--bg);
+  }
+}
 #gm-blocos button {
   display: block;
   margin: 0 auto 7px;
@@ -67,6 +86,11 @@
 #gm-blocos button:hover {
   transition: background-color 0.1s ease-in;
   background: var(--accent);
+}
+#gm-blocos button:disabled {
+  background: var(--disabled);
+  color: var(--disabled-text);
+  box-shadow: none;
 }
 #gm-blocos .error {
   margin: 10px 5%;

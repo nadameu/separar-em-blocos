@@ -173,7 +173,7 @@ function Main(props: { numproc: NumProc }) {
 
   switch (state.status) {
     case 'Loading':
-      return <>Carregando...</>;
+      return <Placeholder />;
     case 'Error':
       return <ShowError dispatch={dispatch} reason={state.reason} />;
     case 'Success':
@@ -206,6 +206,29 @@ function ShowError({ dispatch, reason }: { dispatch: Dispatch; reason: unknown }
       <div class="error">{message}</div>
       <button type="button" onClick={() => dispatch(actions.obterBlocos())}>
         Recarregar
+      </button>
+    </>
+  );
+}
+
+function Placeholder() {
+  const li = (
+    <li class="placeholder">
+      <span />
+      <span />
+      <span />
+    </li>
+  );
+  return (
+    <>
+      <h4>Blocos</h4>
+      <ul>
+        {li}
+        {li}
+        {li}
+      </ul>
+      <button type="button" id="gm-novo-bloco" disabled>
+        Novo
       </button>
     </>
   );
