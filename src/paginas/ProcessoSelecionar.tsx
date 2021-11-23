@@ -1,5 +1,5 @@
 import { Fragment, h, JSX, render } from 'preact';
-import { useCallback, useEffect, useMemo, useReducer } from 'preact/hooks';
+import { useCallback, useLayoutEffect, useMemo, useReducer } from 'preact/hooks';
 import { createBroadcastService } from '../createBroadcastService';
 import * as Database from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
@@ -34,11 +34,18 @@ function fromThunk(thunk: {
   (state: Model, extra: Dependencias): Action | Promise<Action>;
 }): Action {
   return (state, dispatch, extra) => {
-    Promise.resolve()
-      .then(() => thunk(state, extra))
-      .catch(actions.erro)
-      .then(dispatch);
-    return actions.carregando()(state, dispatch, extra);
+    let action: Action | Promise<Action>;
+    try {
+      action = thunk(state, extra);
+    } catch (error) {
+      return actions.erro(error)(state, dispatch, extra);
+    }
+    if (action instanceof Promise) {
+      action.catch(actions.erro).then(dispatch);
+      return actions.carregando()(state, dispatch, extra);
+    } else {
+      return action(state, dispatch, extra);
+    }
   };
 }
 
@@ -166,7 +173,7 @@ function Main(props: { numproc: NumProc }) {
     { status: 'Loading' },
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     extra.bc.subscribe((msg) => dispatch(actions.mensagemRecebida(msg)));
     dispatch(actions.obterBlocos());
   }, []);
