@@ -1,5 +1,12 @@
 import { createRef, Fragment, h, render } from 'preact';
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'preact/hooks';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useState,
+} from 'preact/hooks';
 import { createBroadcastService } from '../createBroadcastService';
 import * as Database from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
@@ -45,14 +52,21 @@ type Dependencias = {
 
 function fromThunk(f: (state: Model, extra: Dependencias) => Action | Promise<Action>): Action {
   return (state, dispatch, extra) => {
-    Promise.resolve()
-      .then(() => f(state, extra))
-      .catch(
+    let t: Action | Promise<Action>;
+    try {
+      t = f(state, extra);
+    } catch (error) {
+      return { status: 'error', error };
+    }
+    if (t instanceof Promise) {
+      t.catch(
         (error): Action =>
           () => ({ status: 'error', error }),
-      )
-      .then(dispatch);
+      ).then(dispatch);
     return state;
+    } else {
+      return t(state, dispatch, extra);
+    }
   };
 }
 
@@ -197,15 +211,10 @@ function Main(props: { mapa: MapaProcessos }) {
     { status: 'init' },
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     extra.bc.subscribe((msg) => dispatch(actions.mensagemRecebida(msg)));
-
     dispatch(actions.obterBlocos());
   }, []);
-
-  useEffect(() => {
-    console.log(state);
-  }, [state]);
 
   switch (state.status) {
     case 'error':
