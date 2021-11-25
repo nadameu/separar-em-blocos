@@ -5,7 +5,7 @@ export const isIdBloco = p.isNonNegativeInteger;
 
 export const isNomeBloco = p.isNonEmptyString;
 
-export const isBloco: p.Predicate<Bloco> = p.hasShape({
+export const isBloco: p.Predicate<Bloco> = /* #__PURE__ */ p.hasShape({
   id: isIdBloco,
   nome: isNomeBloco,
   processos: p.isArray(isNumProc),
@@ -16,7 +16,7 @@ export interface Bloco {
   processos: NumProc[];
 }
 
-export const isBlocoProcesso: p.Predicate<BlocoProcesso> = p.hasShape({
+export const isBlocoProcesso: p.Predicate<BlocoProcesso> = /* #__PURE__ */ p.hasShape({
   id: isIdBloco,
   nome: isNomeBloco,
   inserido: p.isBoolean,

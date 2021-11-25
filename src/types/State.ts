@@ -1,7 +1,7 @@
 import * as p from '../lib/predicates';
 import { isBloco } from './Bloco';
 
-export const isServerState = p.hasShape({
+export const isServerState = /* #__PURE__ */ p.hasShape({
   aberto: p.isBoolean,
   blocos: p.isArray(isBloco),
   aviso: p.isOptional(p.isAnyOf(p.isString)),
