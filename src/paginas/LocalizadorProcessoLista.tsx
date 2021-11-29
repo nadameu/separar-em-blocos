@@ -10,6 +10,7 @@ import {
 import { createBroadcastService } from '../createBroadcastService';
 import * as Database from '../database';
 import { expectUnreachable } from '../lib/expectUnreachable';
+import * as FT from '../lib/fromThunk';
 import * as p from '../lib/predicates';
 import { BroadcastMessage } from '../types/Action';
 import { Bloco } from '../types/Bloco';
@@ -33,13 +34,8 @@ type Model =
   | { status: 'loaded'; blocos: InfoBloco[]; aviso?: string }
   | { status: 'error'; error: unknown };
 
-interface Action {
-  (state: Model, dispatch: Dispatch, extra: Dependencias): Model;
-}
-
-interface Dispatch {
-  (action: Action): void;
-}
+type Action = FT.Action<Model, Dependencias>;
+type Dispatch = FT.Dispatch<Model, Dependencias>;
 
 type Dependencias = {
   DB: Pick<
@@ -50,25 +46,10 @@ type Dependencias = {
   mapa: MapaProcessos;
 };
 
-function fromThunk(f: (state: Model, extra: Dependencias) => Action | Promise<Action>): Action {
-  return (state, dispatch, extra) => {
-    let t: Action | Promise<Action>;
-    try {
-      t = f(state, extra);
-    } catch (error) {
-      return { status: 'error', error };
-    }
-    if (t instanceof Promise) {
-      t.catch(
-        (error): Action =>
-          () => ({ status: 'error', error }),
-      ).then(dispatch);
-      return state;
-    } else {
-      return t(state, dispatch, extra);
-    }
-  };
-}
+const fromThunk = FT.createFromAsyncThunk<Model, Dependencias>(
+  (state) => state,
+  (error) => () => ({ status: 'error', error }),
+);
 
 const actions = {
   blocosModificados:
