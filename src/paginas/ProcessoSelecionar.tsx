@@ -50,40 +50,46 @@ function fromThunk(thunk: {
 }
 
 const actions = {
-  blocosObtidos(blocos: Bloco[]): Action {
-    return () => ({ status: 'Success', blocos, inactive: false });
-  },
-  carregando(): Action {
-    return (state) => {
-      switch (state.status) {
-        case 'Loading':
-        case 'Error':
-          return { status: 'Loading' };
+  blocosModificados:
+    (blocos: Bloco[], { fecharJanela = false } = {}): Action =>
+    (state, dispatch, extra) => {
+      const { bc } = extra;
+      bc.publish({ type: 'Blocos', blocos });
+      if (fecharJanela) window.close();
+      return actions.blocosObtidos(blocos)(state, dispatch, extra);
+    },
+  blocosObtidos:
+    (blocos: Bloco[]): Action =>
+    () => ({ status: 'Success', blocos, inactive: false }),
+  carregando: (): Action => (state) => {
+    switch (state.status) {
+      case 'Loading':
+      case 'Error':
+        return { status: 'Loading' };
 
-        case 'Success':
-          return { ...state, inactive: true, erro: undefined };
-      }
-      return expectUnreachable(state);
-    };
+      case 'Success':
+        return { ...state, inactive: true, erro: undefined };
+    }
+    return expectUnreachable(state);
   },
-  criarBloco(nome: Bloco['nome']): Action {
-    return fromThunk(async ({}, { DB }) => {
+  criarBloco: (nome: Bloco['nome']): Action =>
+    fromThunk(async ({}, { DB }) => {
       const blocos = await DB.getBlocos();
       if (blocos.some((x) => x.nome === nome))
         return actions.erroCapturado(`Já existe um bloco com o nome ${JSON.stringify(nome)}.`);
-      await DB.createBloco({
+      const bloco: Bloco = {
         id: (Math.max(-1, ...blocos.map((x) => x.id)) + 1) as NonNegativeInteger,
         nome,
         processos: [],
-      });
-      return actions.obterBlocos();
-    });
-  },
-  erro(reason: unknown): Action {
-    return () => ({ status: 'Error', reason });
-  },
-  erroCapturado(reason: string): Action {
-    return (state) => {
+      };
+      return actions.blocosModificados(await DB.createBloco(bloco));
+    }),
+  erro:
+    (reason: unknown): Action =>
+    () => ({ status: 'Error', reason }),
+  erroCapturado:
+    (reason: string): Action =>
+    (state) => {
       switch (state.status) {
         case 'Loading':
           return { status: 'Error', reason };
@@ -93,61 +99,45 @@ const actions = {
           return { ...state, inactive: false, erro: reason };
       }
       return expectUnreachable(state);
-    };
+    },
+  inserir: (id: Bloco['id'], { fecharJanela = false } = {}): Action =>
+    actions.modificarProcessos(
+      id,
+      (processos, numproc) => {
+        processos.add(numproc);
+      },
+      { fecharJanela },
+    ),
+  inserirEFechar: (id: Bloco['id']): Action => actions.inserir(id, { fecharJanela: true }),
+  mensagemRecebida: (msg: BroadcastMessage): Action => {
+    switch (msg.type) {
+      case 'Blocos':
+        return actions.blocosObtidos(msg.blocos);
+      case 'NoOp':
+        return actions.noop();
+    }
+    expectUnreachable(msg);
   },
-  inserir(id: Bloco['id']): Action {
-    return fromThunk(async ({}, { DB, numproc }) => {
+  modificarProcessos: (
+    id: Bloco['id'],
+    fn: (processos: Set<NumProc>, numproc: NumProc) => void,
+    { fecharJanela = false } = {},
+  ): Action =>
+    fromThunk(async (_, { DB, numproc }) => {
       const bloco = await DB.getBloco(id);
       if (!bloco) throw new Error(`Bloco não encontrado: ${id}.`);
-      const processos = new Set(bloco.processos).add(numproc);
-      await DB.updateBloco({ ...bloco, processos: [...processos] });
-      return actions.obterBlocos();
-    });
-  },
-  inserirEFechar(id: Bloco['id']): Action {
-    return fromThunk(async (state, { DB, bc, numproc }) => {
-      const bloco = await DB.getBloco(id);
-      if (!bloco) throw new Error(`Bloco não encontrado: ${id}.`);
-      const processos = new Set(bloco.processos).add(numproc);
-      await DB.updateBloco({ ...bloco, processos: [...processos] });
-      const blocos = await DB.getBlocos();
-      bc.publish({ type: 'Blocos', blocos });
-      window.close();
-      return actions.blocosObtidos(blocos);
-    });
-  },
-  mensagemRecebida(msg: BroadcastMessage): Action {
-    return fromThunk(() => {
-      switch (msg.type) {
-        case 'Blocos':
-          return actions.blocosObtidos(msg.blocos);
-        case 'NoOp':
-          return actions.noop();
-      }
-      expectUnreachable(msg);
-    });
-  },
-  noop(): Action {
-    return (state) => state;
-  },
-  obterBlocos(): Action {
-    return fromThunk(async ({}, { DB, bc }) => {
-      const blocos = await DB.getBlocos();
-      bc.publish({ type: 'Blocos', blocos });
-      return actions.blocosObtidos(blocos);
-    });
-  },
-  remover(id: Bloco['id']): Action {
-    return fromThunk(async ({}, { DB, numproc }) => {
-      const bloco = await DB.getBloco(id);
-      if (bloco) {
-        const processos = new Set(bloco.processos);
-        processos.delete(numproc);
-        await DB.updateBloco({ ...bloco, processos: [...processos] });
-      }
-      return actions.obterBlocos();
-    });
-  },
+      const processos = new Set(bloco.processos);
+      fn(processos, numproc);
+      const blocos = await DB.updateBloco({ ...bloco, processos: [...processos] });
+      return actions.blocosModificados(blocos, { fecharJanela });
+    }),
+  noop: (): Action => (state) => state,
+  obterBlocos: (): Action =>
+    fromThunk(async ({}, { DB }) => actions.blocosModificados(await DB.getBlocos())),
+  remover: (id: Bloco['id']): Action =>
+    actions.modificarProcessos(id, (processos, numproc) => {
+      processos.delete(numproc);
+    }),
 };
 
 export function ProcessoSelecionar(numproc: NumProc) {

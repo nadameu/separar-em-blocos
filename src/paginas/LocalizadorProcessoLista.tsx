@@ -63,7 +63,7 @@ function fromThunk(f: (state: Model, extra: Dependencias) => Action | Promise<Ac
         (error): Action =>
           () => ({ status: 'error', error }),
       ).then(dispatch);
-    return state;
+      return state;
     } else {
       return t(state, dispatch, extra);
     }
@@ -71,8 +71,16 @@ function fromThunk(f: (state: Model, extra: Dependencias) => Action | Promise<Ac
 }
 
 const actions = {
-  adicionarInformacao: (blocos: Bloco[]): Action =>
-    fromThunk((_, { mapa }) => {
+  blocosModificados:
+    (blocos: Bloco[]): Action =>
+    (state, dispatch, extra) => {
+      const { bc } = extra;
+      bc.publish({ type: 'Blocos', blocos });
+      return actions.blocosObtidos(blocos)(state, dispatch, extra);
+    },
+  blocosObtidos:
+    (blocos: Bloco[]): Action =>
+    (state, _, { mapa }) => {
       const info = blocos.map(
         (bloco): InfoBloco => ({
           ...bloco,
@@ -80,13 +88,8 @@ const actions = {
           total: bloco.processos.length,
         }),
       );
-      return actions.blocosObtidos(info);
-    }),
-  blocosObtidos:
-    (blocos: InfoBloco[]): Action =>
-    (state) => {
       if (state.status === 'error') return state;
-      return { status: 'loaded', blocos };
+      return { status: 'loaded', blocos: info };
     },
   criarBloco: (nome: Bloco['nome']): Action =>
     fromThunk(async (state, { DB }) => {
@@ -98,8 +101,7 @@ const actions = {
         nome,
         processos: [],
       };
-      await DB.createBloco(bloco);
-      return actions.obterBlocos();
+      return actions.blocosModificados(await DB.createBloco(bloco));
     }),
   erroCapturado:
     (aviso: string): Action =>
@@ -121,34 +123,27 @@ const actions = {
     }),
   excluirBloco: (bloco: p.NonNegativeInteger): Action =>
     fromThunk(async ({}, { DB }) => {
-      await DB.deleteBloco(bloco);
-      return actions.obterBlocos();
+      return actions.blocosModificados(await DB.deleteBloco(bloco));
     }),
-  mensagemRecebida: (msg: BroadcastMessage): Action =>
-    fromThunk(() => {
-      switch (msg.type) {
-        case 'Blocos':
-          return actions.adicionarInformacao(msg.blocos);
-        case 'NoOp':
-          return actions.noop();
-        default:
-          return expectUnreachable(msg);
-      }
-    }),
+  mensagemRecebida: (msg: BroadcastMessage): Action => {
+    switch (msg.type) {
+      case 'Blocos':
+        return actions.blocosObtidos(msg.blocos);
+      case 'NoOp':
+        return actions.noop();
+      default:
+        return expectUnreachable(msg);
+    }
+  },
   obterBlocos: (): Action =>
-    fromThunk(async ({}, { DB, bc }) => {
-      const blocos = await DB.getBlocos();
-      bc.publish({ type: 'Blocos', blocos });
-      return actions.adicionarInformacao(blocos);
-    }),
+    fromThunk(async ({}, { DB }) => actions.blocosModificados(await DB.getBlocos())),
   noop: (): Action => (state) => state,
   removerProcessosAusentes: (id: Bloco['id']): Action =>
-    fromThunk(async (state, { DB, mapa }) => {
+    fromThunk(async (_, { DB, mapa }) => {
       const bloco = await DB.getBloco(id);
       if (!bloco) throw new Error(`Bloco não encontrado: ${id}.`);
       const processos = bloco.processos.filter((x) => mapa.has(x));
-      await DB.updateBloco({ ...bloco, processos });
-      return actions.obterBlocos();
+      return actions.blocosModificados(await DB.updateBloco({ ...bloco, processos }));
     }),
   renomearBloco: (id: Bloco['id'], nome: Bloco['nome']): Action =>
     fromThunk(async ({}, { DB }) => {
@@ -158,8 +153,7 @@ const actions = {
       const others = blocos.filter((x) => x.id !== id);
       if (others.some((x) => x.nome === nome))
         return actions.erroCapturado(`Já existe um bloco com o nome ${JSON.stringify(nome)}.`);
-      await DB.updateBloco({ ...bloco, nome });
-      return actions.obterBlocos();
+      return actions.blocosModificados(await DB.updateBloco({ ...bloco, nome }));
     }),
   selecionarProcessos: (id: Bloco['id']): Action =>
     fromThunk(async ({}, { DB, mapa }) => {
