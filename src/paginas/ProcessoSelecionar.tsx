@@ -9,6 +9,7 @@ import { BroadcastMessage } from '../types/Action';
 import { Bloco, BlocoProcesso } from '../types/Bloco';
 import { NumProc } from '../types/NumProc';
 import css from './ProcessoSelecionar.css';
+import * as FT from '../lib/fromThunk';
 
 type BC = ReturnType<typeof createBroadcastService>;
 
@@ -23,31 +24,8 @@ type Model =
   | { status: 'Success'; blocos: Bloco[]; inactive: boolean; erro?: string }
   | { status: 'Error'; reason: unknown };
 
-interface Action {
-  (state: Model, dispatch: Dispatch, extra: Dependencias): Model;
-}
-interface Dispatch {
-  (action: Action): void;
-}
-
-function fromThunk(thunk: {
-  (state: Model, extra: Dependencias): Action | Promise<Action>;
-}): Action {
-  return (state, dispatch, extra) => {
-    let action: Action | Promise<Action>;
-    try {
-      action = thunk(state, extra);
-    } catch (error) {
-      return actions.erro(error)(state, dispatch, extra);
-    }
-    if (action instanceof Promise) {
-      action.catch(actions.erro).then(dispatch);
-      return actions.carregando()(state, dispatch, extra);
-    } else {
-      return action(state, dispatch, extra);
-    }
-  };
-}
+type Action = FT.Action<Model, Dependencias>;
+type Dispatch = FT.Dispatch<Model, Dependencias>;
 
 const actions = {
   blocosModificados:
@@ -139,6 +117,8 @@ const actions = {
       processos.delete(numproc);
     }),
 };
+
+const fromThunk = /* #__PURE__ */ FT.createFromAsyncThunk(actions.carregando(), actions.erro);
 
 export function ProcessoSelecionar(numproc: NumProc) {
   const mainMenu = document.getElementById('main-menu');
